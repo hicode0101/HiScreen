@@ -175,6 +175,67 @@
     color: var(--text-dim);
   }
 
+  /* ---------- connection password ---------- */
+  #auth {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(6px);
+  }
+  /* the flex display above would beat the UA [hidden] rule otherwise */
+  #auth[hidden] { display: none; }
+  .auth-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: min(320px, 86vw);
+    padding: 26px 30px 20px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  }
+  .auth-title { font-size: 15px; font-weight: 600; }
+  .auth-icon { color: var(--accent); }
+  #auth-input {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 16px;
+    letter-spacing: 3px;
+    text-align: center;
+    outline: none;
+  }
+  #auth-input:focus { border-color: var(--accent); }
+  #auth-btn {
+    width: 100%;
+    height: 36px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: #0a1a24;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #auth-btn:hover { filter: brightness(1.1); }
+  #auth-err {
+    min-height: 16px;
+    font-size: 12px;
+    color: #ff7d75;
+    text-align: center;
+  }
+
   /* ---------- toasts ---------- */
   #toasts {
     position: absolute;
@@ -259,6 +320,19 @@
       <button class="tbtn" id="btn-fs" title="全屏"></button>
     </div>
 
+    <div id="auth" hidden>
+      <div class="auth-card">
+        <div class="auth-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7.7a4 4 0 0 1 8 0v2.8"/><path d="M12 14.4v2.2"/></svg>
+        </div>
+        <div class="auth-title" id="auth-title"></div>
+        <input id="auth-input" type="text" inputmode="text" maxlength="6"
+               autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <button id="auth-btn"></button>
+        <div id="auth-err"></div>
+      </div>
+    </div>
+
     <div id="toasts"></div>
   </div>
 
@@ -282,6 +356,11 @@
       display: "显示器",
       levelShow: "显示声音电平",
       levelHide: "隐藏声音电平",
+      pwTitle: "连接密码",
+      pwPlaceholder: "请输入连接密码",
+      pwConnect: "连接",
+      pwWrong: "密码错误，还可尝试 {n} 次",
+      pwBanned: "错误次数过多，IP 已被锁定，请 {n} 分钟后再试",
     },
     en: {
       waiting: "Waiting for the host to start sharing…",
@@ -297,6 +376,11 @@
       display: "Display",
       levelShow: "Show audio level",
       levelHide: "Hide audio level",
+      pwTitle: "Connection password",
+      pwPlaceholder: "Enter password",
+      pwConnect: "Connect",
+      pwWrong: "Wrong password, {n} attempt(s) left",
+      pwBanned: "Too many failed attempts — this IP is locked, retry in {n} min",
     },
   };
 
@@ -348,8 +432,48 @@
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
   }
   function scheduleReconnect() {
-    if (!ws) setTimeout(connect, 2000);
+    if (!ws) {
+      // While this IP is locked out, wait for the ban to lapse instead of
+      // hammering the host with rejected connections every 2 seconds.
+      var delay = 2000;
+      if (Date.now() < bannedUntil) delay = Math.max(delay, bannedUntil - Date.now());
+      setTimeout(connect, delay);
+    }
   }
+
+  // ---------- connection password ----------
+  // The host may require a password before the socket starts streaming.
+  // While waiting, the server sends need_auth and accepts exactly one
+  // control type: {type:"auth", pw}. pendingPw remembers the last accepted
+  // code so an automatic reconnect doesn't nag the viewer again (a wrong
+  // code clears it and the prompt reappears).
+  var authMask = $("auth"), authTitle = $("auth-title"), authInput = $("auth-input");
+  var authBtn = $("auth-btn"), authErr = $("auth-err");
+  var pendingPw = "";
+  // Timestamp (epoch ms) until which this IP must wait before reconnecting;
+  // set when the host reports a lockout, cleared on a successful auth.
+  var bannedUntil = 0;
+
+  authTitle.textContent = I18N[LANG].pwTitle;
+  authInput.placeholder = I18N[LANG].pwPlaceholder;
+  authBtn.textContent = I18N[LANG].pwConnect;
+
+  function showAuth() {
+    authMask.hidden = false;
+    authErr.textContent = "";
+    authInput.value = "";
+    setTimeout(function () { authInput.focus(); }, 50);
+  }
+  function submitAuth() {
+    var pw = authInput.value.trim();
+    if (!pw || !ws || ws.readyState !== 1) return;
+    pendingPw = pw;
+    ws.send(JSON.stringify({ type: "auth", pw: pw }));
+  }
+  authBtn.addEventListener("click", submitAuth);
+  authInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") submitAuth();
+  });
 
   function detectOS() {
     var ua = navigator.userAgent;
@@ -392,6 +516,35 @@
           break;
         case "pong":
           if (typeof msg.t === "number") rtt = Date.now() - msg.t;
+          break;
+        case "need_auth":
+          // Server asks for the password before streaming anything.
+          if (pendingPw) ws.send(JSON.stringify({ type: "auth", pw: pendingPw }));
+          else showAuth();
+          break;
+        case "auth_ok":
+          authMask.hidden = true;
+          bannedUntil = 0;
+          // The pre-auth hello was consumed by the gate — identify again so
+          // the host list shows OS · browser.
+          ws.send(JSON.stringify({ type: "hello", os: detectOS(), browser: detectBrowser() }));
+          break;
+        case "auth_fail":
+          pendingPw = "";
+          showAuth();
+          authErr.textContent = I18N[LANG].pwWrong.replace("{n}", msg.left);
+          break;
+        case "auth_banned":
+          // This IP exhausted its attempts: the host rejects everything
+          // without checking the password until the lockout lapses.
+          pendingPw = "";
+          showAuth();
+          var secs = typeof msg.secs === "number" && msg.secs >= 1 ? msg.secs : 300;
+          authErr.textContent = I18N[LANG].pwBanned.replace(
+            "{n}",
+            Math.max(1, Math.ceil(secs / 60)),
+          );
+          bannedUntil = Date.now() + secs * 1000;
           break;
       }
       return;

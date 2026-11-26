@@ -68,7 +68,17 @@
     "apply": "Save and Apply",
     "portApplied": "Port setting applied",
     "portFailed": "Failed to apply port (maybe in use)",
-    "portHint": "The server restarts automatically when the port changes. Viewers open http://host-ip:port.\nIf viewers cannot connect, allow HiScreen through the firewall manually."
+    "portHint": "The server restarts automatically when the port changes. Viewers open http://host-ip:port.\nIf viewers cannot connect, allow HiScreen through the firewall manually.",
+    "pwTitle": "Connection Password",
+    "pwEnable": "Require connection password",
+    "pwHint": "When enabled, viewers must enter the correct password before watching. Off by default and re-enabled manually each launch; enabling generates a fresh random password.",
+    "pwOnHint": "The random password is 4–6 mixed letters/digits. You can also set an easy-to-remember one manually; viewers enter it when connecting.",
+    "pwInvalid": "Use 4–6 English letters or digits",
+    "pwRegen": "Generate a new password",
+    "pwCopy": "Copy password",
+    "pwCopied": "Password copied",
+    "pwChanged": "Connection password updated",
+    "pwChangeFailed": "Failed to update the password"
   },
   "quality": {
     "title": "Video and Quality Settings",

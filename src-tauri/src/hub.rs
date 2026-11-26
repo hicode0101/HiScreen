@@ -3,10 +3,11 @@
 //! share status. Every long-lived thread (capture, audio, HTTP server) and
 //! every WebSocket task talks to the hub instead of to each other.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tokio::sync::broadcast;
@@ -16,6 +17,73 @@ use crate::audio::AudioBus;
 /// First byte of every binary WebSocket frame identifies the payload type.
 pub const FRAME_VIDEO: u8 = 1;
 pub const FRAME_AUDIO: u8 = 2;
+
+/// Wrong-password attempts per IP before it is locked out temporarily.
+pub const PW_MAX_FAILS: u32 = 5;
+/// How long an IP stays locked out after exhausting its attempts.
+pub const PW_BAN_DURATION: Duration = Duration::from_secs(300);
+
+/// Outcome of recording one wrong password attempt.
+pub enum PwFail {
+    /// Still below the limit; carries the running per-IP count.
+    Counted(u32),
+    /// Limit reached; the IP is locked out starting now (seconds remaining).
+    Banned(u64),
+}
+
+/// Per-IP failure accounting for the connection password. Lives on the hub
+/// so counts survive reconnects from the same address; a success wipes the
+/// record, exhausting the limit starts a timed ban.
+pub struct PwGuard {
+    fails: HashMap<IpAddr, u32>,
+    bans: HashMap<IpAddr, Instant>,
+}
+
+impl PwGuard {
+    pub fn new() -> Self {
+        Self {
+            fails: HashMap::new(),
+            bans: HashMap::new(),
+        }
+    }
+
+    /// Seconds left on `ip`'s ban; expired entries are dropped lazily here.
+    pub fn ban_left_secs(&mut self, ip: &IpAddr) -> Option<u64> {
+        let until = self.bans.get(ip).copied()?;
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            self.bans.remove(ip);
+            return None;
+        }
+        Some(left.as_secs() + u64::from(left.subsec_millis() > 0))
+    }
+
+    /// Record one wrong attempt. Returns `Banned` when this attempt tipped
+    /// the IP over the limit (the ban starts now and the count resets, so a
+    /// fresh round begins once the ban lapses).
+    pub fn add_fail(&mut self, ip: &IpAddr) -> PwFail {
+        let fails = self.fails.entry(*ip).or_insert(0);
+        *fails += 1;
+        if *fails >= PW_MAX_FAILS {
+            self.fails.remove(ip);
+            self.bans.insert(*ip, Instant::now() + PW_BAN_DURATION);
+            PwFail::Banned(PW_BAN_DURATION.as_secs())
+        } else {
+            PwFail::Counted(*fails)
+        }
+    }
+
+    /// A successful authentication wipes the IP's failure record.
+    pub fn clear_fails(&mut self, ip: &IpAddr) {
+        self.fails.remove(ip);
+    }
+
+    /// (Re)enabling the password starts a fresh round: lift all lockouts.
+    pub fn clear_all(&mut self) {
+        self.fails.clear();
+        self.bans.clear();
+    }
+}
 
 const MAX_LOGS: usize = 200;
 
@@ -99,6 +167,14 @@ pub struct Hub {
     pub audio_bus: AudioBus,
     /// Whether the mouse cursor is composited into the video frames.
     pub cursor_on: AtomicBool,
+    /// Whether viewers must enter the connection password to join.
+    /// Session-only (never restored from the config): off at every launch.
+    pub pw_on: AtomicBool,
+    /// Current connection password (4..=6 ASCII letters/digits); only
+    /// checked by the WS auth gate while `pw_on` is set.
+    pub password: Mutex<String>,
+    /// Per-IP wrong-attempt counts and timed bans for the password gate.
+    pub pw_guard: Mutex<PwGuard>,
     pub fps: AtomicU32,
     pub quality: AtomicU32,
 }
@@ -132,6 +208,9 @@ impl Hub {
             mic_level_db10: AtomicI32::new(-900),
             audio_bus: AudioBus::default(),
             cursor_on: AtomicBool::new(cursor_on),
+            pw_on: AtomicBool::new(false),
+            password: Mutex::new(String::new()),
+            pw_guard: Mutex::new(PwGuard::new()),
             fps: AtomicU32::new(fps),
             quality: AtomicU32::new(quality),
         }
@@ -196,5 +275,83 @@ impl Hub {
             "audio": self.audio_on.load(Ordering::Relaxed),
         });
         json.to_string()
+    }
+}
+
+#[cfg(test)]
+mod pw_guard_tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    fn ip(n: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(192, 168, 0, n))
+    }
+
+    #[test]
+    fn success_clears_failures() {
+        let mut g = PwGuard::new();
+        let a = ip(1);
+        for _ in 0..PW_MAX_FAILS - 1 {
+            assert!(matches!(g.add_fail(&a), PwFail::Counted(_)));
+        }
+        g.clear_fails(&a);
+        // A fresh round after the success still does not tip over.
+        for _ in 0..PW_MAX_FAILS - 1 {
+            assert!(matches!(g.add_fail(&a), PwFail::Counted(_)));
+        }
+        assert_eq!(g.ban_left_secs(&a), None);
+    }
+
+    #[test]
+    fn fifth_fail_bans_for_five_minutes() {
+        let mut g = PwGuard::new();
+        let a = ip(2);
+        for _ in 0..PW_MAX_FAILS - 1 {
+            assert!(matches!(g.add_fail(&a), PwFail::Counted(_)));
+        }
+        match g.add_fail(&a) {
+            PwFail::Banned(secs) => assert!((299..=300).contains(&secs)),
+            _ => panic!("expected the fifth failure to start a ban"),
+        }
+        // The count resets under the ban; a fresh round starts after it.
+        assert!(matches!(g.add_fail(&a), PwFail::Counted(1)));
+    }
+
+    #[test]
+    fn ban_expiry_lifts_the_lock() {
+        let mut g = PwGuard::new();
+        let a = ip(3);
+        for _ in 0..PW_MAX_FAILS {
+            let _ = g.add_fail(&a);
+        }
+        assert!(g.ban_left_secs(&a).is_some());
+        // Pretend time has passed: replace the expiry with a stale instant.
+        g.bans.insert(a, Instant::now() - PW_BAN_DURATION);
+        assert_eq!(g.ban_left_secs(&a), None);
+    }
+
+    #[test]
+    fn counts_are_per_ip() {
+        let mut g = PwGuard::new();
+        let (a, b, c) = (ip(4), ip(5), IpAddr::V6(Ipv6Addr::LOCALHOST));
+        assert!(matches!(g.add_fail(&a), PwFail::Counted(1)));
+        assert!(matches!(g.add_fail(&a), PwFail::Counted(2)));
+        assert!(matches!(g.add_fail(&b), PwFail::Counted(1)));
+        // IPv4 and IPv6 loopback are distinct addresses.
+        assert!(matches!(g.add_fail(&c), PwFail::Counted(1)));
+        g.clear_fails(&a);
+        assert!(matches!(g.add_fail(&a), PwFail::Counted(1)));
+    }
+
+    #[test]
+    fn clear_all_lifts_bans_and_counts() {
+        let mut g = PwGuard::new();
+        let a = ip(6);
+        for _ in 0..PW_MAX_FAILS {
+            let _ = g.add_fail(&a);
+        }
+        g.clear_all();
+        assert_eq!(g.ban_left_secs(&a), None);
+        assert!(matches!(g.add_fail(&a), PwFail::Counted(1)));
     }
 }

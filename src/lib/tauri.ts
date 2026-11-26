@@ -51,6 +51,12 @@ export interface LogEntry {
   msg: string;
 }
 
+/** Session-only connection-password state (never stored in config.json). */
+export interface PasswordState {
+  enabled: boolean;
+  password: string;
+}
+
 /** True when running inside the Tauri webview (vs. a plain browser). */
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -82,6 +88,9 @@ export const api = {
   getMicLevel: () => invoke<number>("get_mic_level"),
   updateMicParams: (enabled: boolean, device: string, volume: number) =>
     invoke<void>("update_mic_params", { enabled, device, volume }),
+  setPassword: (enabled: boolean, password: string) =>
+    invoke<void>("set_password", { enabled, password }),
+  getPasswordState: () => invoke<PasswordState>("get_password_state"),
   shareStart: (displayId: number) =>
     invoke<void>("share_start", { displayId }),
   shareStop: () => invoke<void>("share_stop"),

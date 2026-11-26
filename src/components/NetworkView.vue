@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { NButton, NInputNumber } from "naive-ui";
+import { computed, onBeforeUnmount, ref } from "vue";
+import { NButton, NInput, NInputNumber, NSwitch } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { useMessage } from "naive-ui";
-import { openExternal } from "@/lib/tauri";
-import { clampPort, persistSettings, settings } from "@/stores/settings";
+import { openExternal, api, isTauri } from "@/lib/tauri";
+import {
+  applyPassword,
+  clampPort,
+  persistSettings,
+  settings,
+} from "@/stores/settings";
 import { applyPort, share } from "@/stores/share";
 import Icon from "./Icon.vue";
 
@@ -49,6 +54,109 @@ function copyUrl(): void {
 function openInBrowser(): void {
   if (share.status.url) void openExternal(share.status.url);
 }
+
+// -------------------------------------------------------- connection password
+
+/** Draft being edited; the applied password lives in settings.pw. */
+const pwDraft = ref<string>(settings.pw);
+/** Value the backend currently holds, so no-op edits skip the toast. */
+let appliedPw = settings.pw;
+let pwApplyTimer: number | null = null;
+
+/** Same rule the backend enforces: 4–6 ASCII letters/digits. */
+function validPw(pw: string): boolean {
+  return /^[A-Za-z0-9]{4,6}$/.test(pw);
+}
+
+const pwInvalid = computed(
+  () => settings.pwEnabled && pwDraft.value !== settings.pw && !validPw(pwDraft.value),
+);
+
+function randomPw(): string {
+  // Random 6-char mix (upper + lower + digit, one of each guaranteed);
+  // look-alikes (0/O/o, 1/l/I) are left out so the code reads clearly.
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnpqrstuvwxyz";
+  const digits = "23456789";
+  const all = upper + lower + digits;
+  const rand = (set: string): string => {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return set[buf[0] % set.length];
+  };
+  const chars = [rand(upper), rand(lower), rand(digits)];
+  while (chars.length < 6) chars.push(rand(all));
+  for (let i = chars.length - 1; i > 0; i--) {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    const j = buf[0] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+function onPwEnabled(value: boolean): void {
+  // Session-only switch: enabling always mints a fresh random password,
+  // and nothing is written to config.json.
+  settings.pwEnabled = value;
+  settings.pw = value ? randomPw() : "";
+  pwDraft.value = settings.pw;
+  appliedPw = settings.pw;
+  void applyPassword();
+}
+
+function onPwEdit(value: string): void {
+  pwDraft.value = value;
+  if (!validPw(value)) return; // invalid drafts are never applied
+  settings.pw = value;
+  schedulePwApply();
+}
+
+function schedulePwApply(): void {
+  if (pwApplyTimer !== null) clearTimeout(pwApplyTimer);
+  pwApplyTimer = window.setTimeout(() => {
+    pwApplyTimer = null;
+    void applyEditedPw();
+  }, 300);
+}
+
+/** Persist a manually edited password; confirm with a bottom-right toast. */
+async function applyEditedPw(): Promise<void> {
+  if (!isTauri() || !settings.loaded || settings.pw === appliedPw) return;
+  try {
+    await api.setPassword(settings.pwEnabled, settings.pw);
+    appliedPw = settings.pw;
+    message.success(t("network.pwChanged"));
+  } catch {
+    message.error(t("network.pwChangeFailed"));
+  }
+}
+
+function regenPw(): void {
+  settings.pw = randomPw();
+  pwDraft.value = settings.pw;
+  // Same path as a manual edit: apply + bottom-right toast (appliedPw is
+  // updated inside applyEditedPw once the backend confirms).
+  void applyEditedPw();
+}
+
+function copyPw(): void {
+  if (!settings.pw) return;
+  void navigator.clipboard
+    .writeText(settings.pw)
+    .then(() => message.success(t("network.pwCopied")))
+    .catch(() => message.error(t("share.copyFailed")));
+}
+
+onBeforeUnmount(() => {
+  // A pending edit is flushed, not dropped: navigating away right after
+  // typing still applies (and toasts) the change.
+  if (pwApplyTimer !== null) {
+    clearTimeout(pwApplyTimer);
+    pwApplyTimer = null;
+    void applyEditedPw();
+  }
+});
 </script>
 
 <template>
@@ -93,6 +201,45 @@ function openInBrowser(): void {
         </NButton>
       </div>
       <p class="hint">{{ t("network.portHint") }}</p>
+    </section>
+
+    <section class="card">
+      <h3 class="section-title">{{ t("network.pwTitle") }}</h3>
+      <div class="pw-row">
+        <label class="toggle-item">
+          <NSwitch
+            size="small"
+            :value="settings.pwEnabled"
+            @update:value="onPwEnabled"
+          />
+          <span>{{ t("network.pwEnable") }}</span>
+        </label>
+        <template v-if="settings.pwEnabled">
+          <NInput
+            class="pw-input"
+            size="small"
+            :value="pwDraft"
+            :maxlength="6"
+            :status="pwInvalid ? 'error' : undefined"
+            @update:value="onPwEdit"
+          />
+          <button class="icon-btn" :title="t('network.pwRegen')" @click="regenPw">
+            <Icon name="refresh" :size="14" />
+          </button>
+          <button class="icon-btn" :title="t('network.pwCopy')" @click="copyPw">
+            <Icon name="copy" :size="14" />
+          </button>
+        </template>
+      </div>
+      <p class="hint" :class="{ danger: pwInvalid }">
+        {{
+          pwInvalid
+            ? t("network.pwInvalid")
+            : settings.pwEnabled
+              ? t("network.pwOnHint")
+              : t("network.pwHint")
+        }}
+      </p>
     </section>
   </div>
 </template>
@@ -183,11 +330,38 @@ function openInBrowser(): void {
   width: 140px;
 }
 
+.pw-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pw-input {
+  width: 130px;
+}
+
+.pw-input :deep(input) {
+  font-family: "Cascadia Code", Consolas, monospace;
+  letter-spacing: 2px;
+}
+
 .hint {
   margin: 12px 0 0;
   font-size: 12.5px;
   color: var(--text-tertiary);
   line-height: 1.6;
   white-space: pre-line;
+}
+
+.hint.danger {
+  color: #d03050;
 }
 </style>

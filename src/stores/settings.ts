@@ -20,6 +20,10 @@ export const settings = reactive({
   micEnabled: false,
   micDevice: "",
   micVolume: 100,
+  // Connection password: session-only (off at every launch, never written
+  // to config.json). Enabling generates a fresh random code each time.
+  pwEnabled: false,
+  pw: "",
   autoStart: false,
   serverAutoStart: true,
 });
@@ -64,6 +68,15 @@ export async function loadSettings(): Promise<void> {
     normalize(cfg as unknown as Partial<typeof settings>);
   } catch {
     // Running outside Tauri (e.g. plain browser) — keep defaults.
+  }
+  // Sync the connection-password switch with the backend hub, so the UI
+  // matches reality after a webview reload (it is not part of config.json).
+  try {
+    const pw = await api.getPasswordState();
+    settings.pwEnabled = pw.enabled;
+    settings.pw = pw.password;
+  } catch {
+    // Outside Tauri — keep the session defaults.
   }
   settings.loaded = true;
 }
@@ -114,6 +127,18 @@ export async function applyMicParams(): Promise<void> {
     );
   } catch {
     // Outside Tauri — nothing to apply.
+  }
+}
+
+/** Push the connection-password switch to the backend WS auth gate. */
+export async function applyPassword(): Promise<void> {
+  if (!settings.loaded) return;
+  try {
+    await api.setPassword(settings.pwEnabled, settings.pw);
+  } catch {
+    // Outside Tauri, or the backend rejected an invalid password — the UI
+    // validates the 4–6 letter/digit rule before applying, so failures here
+    // are environmental, not user input problems.
   }
 }
 

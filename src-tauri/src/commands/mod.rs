@@ -264,6 +264,63 @@ pub fn update_mic_params(state: State<MediaState>, enabled: bool, device: String
     }
 }
 
+// ------------------------------------------------------- connection password
+
+/// Current connection-password state for the host UI (session-only: never
+/// restored from the config, so it is only non-empty after an explicit
+/// enable in this session).
+#[derive(Serialize)]
+pub struct PasswordState {
+    pub enabled: bool,
+    pub password: String,
+}
+
+/// Turn the connection password on/off. Enabling requires a 4..=6 ASCII
+/// letters/digits password; it is checked by the WS auth gate in
+/// server/mod.rs and never persisted.
+#[tauri::command]
+pub fn set_password(state: State<MediaState>, enabled: bool, password: String) -> Result<(), String> {
+    let hub = &state.hub;
+    if enabled {
+        let pw = password.trim().to_string();
+        let valid = (4..=6).contains(&pw.chars().count())
+            && pw.chars().all(|c| c.is_ascii_alphanumeric());
+        if !valid {
+            return Err("密码需为 4~6 位英文字母或数字".into());
+        }
+        *hub.password.lock().unwrap() = pw;
+        // (Re)enabling starts a fresh round: lift lockouts from before, so
+        // the host can rescue an IP that locked itself out earlier.
+        hub.pw_guard.lock().unwrap().clear_all();
+        // Changing the code while the gate is already on is an edit, not a
+        // fresh enable — the event log says so.
+        let was_on = hub.pw_on.swap(true, Ordering::Relaxed);
+        hub.log(
+            LogLevel::Info,
+            if was_on {
+                "连接密码已修改"
+            } else {
+                "连接密码已开启"
+            },
+        );
+    } else if hub.pw_on.swap(false, Ordering::Relaxed) {
+        hub.log(LogLevel::Info, "连接密码已关闭");
+    }
+    Ok(())
+}
+
+/// Password state so the UI stays in sync after a webview reload.
+#[tauri::command]
+pub fn get_password_state(state: State<MediaState>) -> PasswordState {
+    let enabled = state.hub.pw_on.load(Ordering::Relaxed);
+    let password = if enabled {
+        state.hub.password.lock().unwrap().clone()
+    } else {
+        String::new()
+    };
+    PasswordState { enabled, password }
+}
+
 // ---------------------------------------------------------------- share
 
 #[tauri::command]

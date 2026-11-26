@@ -17,13 +17,21 @@ use axum::response::Html;
 use axum::routing::get;
 use axum::Router;
 use bytes::Bytes;
+use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use crate::hub::{now_ms, Hub, LogLevel, ViewerEntry};
+use crate::hub::{now_ms, Hub, LogLevel, PwFail, ViewerEntry, PW_BAN_DURATION, PW_MAX_FAILS};
 
 const VIEWER_HTML: &str = include_str!("viewer.html");
+
+/// How long an unauthenticated viewer may sit on the password prompt before
+/// its socket is closed (the viewer page reconnects on its own).
+const AUTH_TIMEOUT: Duration = Duration::from_secs(120);
+/// Grace period for draining frames after a rejected connection closes, so
+/// the close completes as a FIN instead of a reset (see `close_gracefully`).
+const CLOSE_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Handle to a running server instance (port + graceful shutdown trigger).
 pub struct ServerHandle {
@@ -137,6 +145,34 @@ async fn ws_route(
 
 async fn viewer_socket(socket: WebSocket, hub: Arc<Hub>, ip: IpAddr) {
     let (mut sink, mut stream) = socket.split();
+
+    // Connection-password gate: viewers register (and appear in the host UI)
+    // only after presenting the password, so unauthenticated sockets never
+    // receive frames or count towards the audience list.
+    if hub.pw_on.load(Ordering::Relaxed) {
+        // An IP that exhausted its attempts is locked out: connections are
+        // dropped outright without the password ever being consulted.
+        // (Bind first — a lock() temporary would otherwise be held across
+        // the await below, making the future !Send.)
+        let ban_secs = hub.pw_guard.lock().unwrap().ban_left_secs(&ip);
+        if let Some(secs) = ban_secs {
+            hub.log(LogLevel::Warn, format!("IP 已被锁定，拒绝连接: {ip}"));
+            let msg = json!({ "type": "auth_banned", "secs": secs }).to_string();
+            if sink.send(Message::text(msg)).await.is_ok() {
+                close_gracefully(&mut sink, &mut stream).await;
+            }
+            return;
+        }
+        let need = json!({ "type": "need_auth" }).to_string();
+        if sink.send(Message::text(need)).await.is_err() {
+            return;
+        }
+        if !auth_gate(&hub, &mut sink, &mut stream, ip).await {
+            close_gracefully(&mut sink, &mut stream).await;
+            return;
+        }
+    }
+
     let id = hub.next_viewer_id.fetch_add(1, Ordering::Relaxed);
     let (kick_tx, mut kick_rx) = mpsc::unbounded_channel::<()>();
     // Replies produced by the reader half (pongs) go through here so the
@@ -228,6 +264,98 @@ async fn viewer_socket(socket: WebSocket, hub: Arc<Hub>, ip: IpAddr) {
 
     remove_viewer(&hub, &entry);
     let _ = sink.close().await;
+}
+
+/// Close the socket and briefly drain incoming frames. Dropping a socket
+/// with unread client data makes the OS send a TCP reset instead of a FIN,
+/// and resets wipe buffered received data on the peer — a rejection reply
+/// sent right before closing would never reach the viewer (observed as
+/// close code 1006 with no message). Draining lets the close handshake
+/// complete normally.
+async fn close_gracefully(
+    sink: &mut SplitSink<WebSocket, Message>,
+    stream: &mut SplitStream<WebSocket>,
+) {
+    let _ = sink.close().await;
+    let _ = tokio::time::timeout(CLOSE_DRAIN_TIMEOUT, async {
+        while stream.next().await.is_some() {}
+    })
+    .await;
+}
+
+/// Ask the viewer for the connection password and wait for a matching
+/// `auth` message. Failure counts and bans are tracked per IP on the hub,
+/// so they survive reconnects; a correct answer wipes the count. Returns
+/// true once the viewer may proceed to registration; false means the
+/// socket should be dropped unregistered.
+async fn auth_gate(
+    hub: &Hub,
+    sink: &mut SplitSink<WebSocket, Message>,
+    stream: &mut SplitStream<WebSocket>,
+    ip: IpAddr,
+) -> bool {
+    loop {
+        let msg = match tokio::time::timeout(AUTH_TIMEOUT, stream.next()).await {
+            Ok(Some(m)) => m,
+            Ok(None) => return false, // socket closed by the viewer
+            Err(_) => {
+                hub.log(LogLevel::Warn, format!("观众密码输入超时，已断开: {ip}"));
+                return false;
+            }
+        };
+        match msg {
+            Ok(Message::Text(txt)) => {
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(txt.as_str()) else {
+                    continue;
+                };
+                if v.get("type").and_then(|t| t.as_str()) != Some("auth") {
+                    continue; // hello/ping before auth carry no privileges
+                }
+                let attempt = v.get("pw").and_then(|x| x.as_str()).unwrap_or("");
+                let expected = hub.password.lock().unwrap().clone();
+                if !expected.is_empty() && attempt == expected {
+                    // Success wipes the IP's failure record.
+                    hub.pw_guard.lock().unwrap().clear_fails(&ip);
+                    let ok = json!({ "type": "auth_ok" }).to_string();
+                    if sink.send(Message::text(ok)).await.is_err() {
+                        return false;
+                    }
+                    hub.log(LogLevel::Info, format!("观众密码验证通过: {ip}"));
+                    return true;
+                }
+                // Bind before matching: a lock() temporary in the scrutinee
+                // would be held across the awaits in the arms (!Send).
+                let outcome = hub.pw_guard.lock().unwrap().add_fail(&ip);
+                match outcome {
+                    PwFail::Banned(secs) => {
+                        hub.log(
+                            LogLevel::Warn,
+                            format!(
+                                "观众密码错误次数过多，IP 已锁定 {} 分钟: {ip}",
+                                PW_BAN_DURATION.as_secs() / 60
+                            ),
+                        );
+                        let reply = json!({ "type": "auth_banned", "secs": secs }).to_string();
+                        let _ = sink.send(Message::text(reply)).await;
+                        return false;
+                    }
+                    PwFail::Counted(fails) => {
+                        hub.log(
+                            LogLevel::Warn,
+                            format!("观众密码错误（{fails}/{PW_MAX_FAILS}）: {ip}"),
+                        );
+                        let reply = json!({ "type": "auth_fail", "left": PW_MAX_FAILS - fails })
+                            .to_string();
+                        if sink.send(Message::text(reply)).await.is_err() {
+                            return false;
+                        }
+                    }
+                }
+            }
+            Ok(Message::Close(_)) | Err(_) => return false,
+            Ok(_) => {} // binary frames / protocol pings before auth
+        }
+    }
 }
 
 fn remove_viewer(hub: &Hub, entry: &Arc<ViewerEntry>) {

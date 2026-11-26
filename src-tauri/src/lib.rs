@@ -123,6 +123,8 @@ pub fn run() {
             commands::list_mics,
             commands::get_mic_level,
             commands::update_mic_params,
+            commands::set_password,
+            commands::get_password_state,
             commands::share_start,
             commands::share_stop,
             commands::broadcast_notice,
