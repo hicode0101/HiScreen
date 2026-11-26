@@ -79,6 +79,9 @@ async function refreshSources(): Promise<void> {
   const ok = await refreshDisplays();
   if (ok) message.success(t("share.sourcesRefreshed"));
   else message.error(t("share.refreshFailed"));
+  // The preview normally refreshes every 2 s; sync it right away so the
+  // thumbnail matches the freshly enumerated display list.
+  void loadPreview(share.selected, true);
 }
 </script>
 

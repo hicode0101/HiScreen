@@ -16,6 +16,7 @@ export const settings = reactive({
   quality: 80,
   fps: 30,
   audio: true,
+  showCursor: true,
   autoStart: false,
   serverAutoStart: true,
 });
@@ -38,6 +39,8 @@ function normalize(cfg: Partial<typeof settings>): void {
   settings.quality = clampQuality(Number(cfg.quality) || 80);
   settings.fps = clampFps(Number(cfg.fps) || 30);
   settings.audio = cfg.audio !== false;
+  // Only an explicit false hides the mouse cursor from viewers.
+  settings.showCursor = cfg.showCursor !== false;
   // Opt-in: only an explicit true enables auto-start sharing.
   settings.autoStart = cfg.autoStart === true;
   settings.serverAutoStart = cfg.serverAutoStart !== false;
@@ -62,6 +65,7 @@ export async function persistSettings(): Promise<void> {
       quality: settings.quality,
       fps: settings.fps,
       audio: settings.audio,
+      showCursor: settings.showCursor,
       autoStart: settings.autoStart,
       serverAutoStart: settings.serverAutoStart,
     });
@@ -70,11 +74,16 @@ export async function persistSettings(): Promise<void> {
   }
 }
 
-/** Push live share parameters (quality/fps/audio) to the backend. */
+/** Push live share parameters (quality/fps/audio/cursor) to the backend. */
 export async function applyShareParams(): Promise<void> {
   if (!settings.loaded) return;
   try {
-    await api.updateShareParams(settings.quality, settings.fps, settings.audio);
+    await api.updateShareParams(
+      settings.quality,
+      settings.fps,
+      settings.audio,
+      settings.showCursor,
+    );
   } catch {
     // Outside Tauri — nothing to apply.
   }

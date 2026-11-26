@@ -20,6 +20,8 @@ pub struct AppConfig {
     pub fps: u32,
     /// Whether system audio is captured and streamed
     pub audio: bool,
+    /// Whether the mouse cursor is composited into the shared video
+    pub show_cursor: bool,
     /// Start sharing the primary display when the app launches
     pub auto_start: bool,
     /// Start the HTTP/WS server when the app launches
@@ -35,6 +37,8 @@ impl Default for AppConfig {
             quality: 80,
             fps: 30,
             audio: true,
+            // Viewers normally expect to see the host mouse pointer.
+            show_cursor: true,
             // Sharing spawns the capture/encode threads; keep it opt-in so
             // the first launch stays instant.
             auto_start: false,

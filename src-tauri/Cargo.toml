@@ -30,7 +30,7 @@ base64 = "0.22"
 [target."cfg(windows)".dependencies]
 # Versions must stay in sync with tauri's own WebView2 deps so the COM types unify.
 webview2-com = "0.39"
-windows = { version = "0.62", features = ["Win32_Media_Audio", "Win32_System_Com"] }
+windows = { version = "0.62", features = ["Win32_Media_Audio", "Win32_System_Com", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
 
 [target."cfg(unix)".dependencies]
 cpal = "0.15"

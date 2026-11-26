@@ -43,6 +43,7 @@ HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择�
 - 🌐 **浏览器观看**：观众页零依赖（HTTP + WebSocket 自包含页面），视频 JPEG 帧流 + 音频 PCM 流，自动重连
 - 🔊 **系统声音分享**：Windows 通过 WASAPI loopback 采集系统声音；macOS / Linux 优先取 PulseAudio/PipeWire monitor 源（否则麦克风）
 - 🎛️ **画质可调**：视频质量（JPEG 质量 10–100%）与目标帧率（10–60 FPS）实时生效，无需重启分享
+- 🖱️ **鼠标光标分享**：可开关的鼠标光标叠加（Windows 采集时合成进视频帧，观众可见光标移动）
 - 📱 **扫码即看**：主机 UI 内嵌二维码，手机扫码直达观众页
 
 **观众管理**
@@ -97,7 +98,7 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-**使用流程**：启动 HiScreen → 服务自动监听 `:7870`（可在「网络设置」改端口）→「开始分享」选择显示器并点击开始（默认不自动分享，可在「音频与质量」打开「自动开始分享」）→ 观众浏览器打开界面上的地址或扫码即可观看。
+**使用流程**：启动 HiScreen → 服务自动监听 `:7870`（可在「网络设置」改端口）→「开始分享」选择显示器并点击开始（默认不自动分享；如需启动即分享，可手动编辑 `config.json` 的 `autoStart`）→ 观众浏览器打开界面上的地址或扫码即可观看。
 
 **纯浏览器调试**（不带 Tauri 窗口，后端功能自动降级）：
 
@@ -152,13 +153,13 @@ HiScreen/
 │  ├─ App.vue                     # NConfigProvider 接线 + 标题栏/侧边栏/六视图/状态栏骨架
 │  ├─ components/
 │  │  ├─ TitleBar.vue             # 自绘标题栏
-│  │  ├─ Sidebar.vue              # 左侧导航（开始分享/观众/网络/音频质量/日志）
+│  │  ├─ Sidebar.vue              # 左侧导航（开始分享/观众/网络/视频质量/日志/关于）
 │  │  ├─ ShareView.vue            # 开始分享主视图（预览/来源/地址/二维码/事件流）
 │  │  ├─ AudienceView.vue         # 观众管理全页（含踢除）
 │  │  ├─ AudiencePanel.vue        # 观众表格 + 广播通知（share 页与观众页共用）
 │  │  ├─ NetworkView.vue          # 网络设置（端口/地址列表/防火墙手工放行指引）
-│  │  ├─ QualityView.vue          # 音频与质量全页
-│  │  ├─ QualityControls.vue      # 质量/帧率/音频控件（音频与质量页）
+│  │  ├─ QualityView.vue          # 视频与质量全页
+│  │  ├─ QualityControls.vue      # 质量/帧率/音频/光标控件（视频与质量页）
 │  │  ├─ LogView.vue              # 事件日志
 │  │  ├─ StatusBar.vue            # 状态栏（服务状态/观众数/版本号）
 │  │  ├─ AboutView.vue           # 关于页（版本信息 + 主题/语言切换，侧边栏「关于」进入）

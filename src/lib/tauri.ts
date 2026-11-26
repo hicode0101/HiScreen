@@ -7,6 +7,7 @@ export interface AppConfig {
   quality: number;
   fps: number;
   audio: boolean;
+  showCursor: boolean;
   autoStart: boolean;
   serverAutoStart: boolean;
 }
@@ -73,8 +74,8 @@ export const api = {
   serverStatus: () => invoke<ServerStatus>("server_status"),
   serverStart: (port: number) => invoke<void>("server_start", { port }),
   serverStop: () => invoke<void>("server_stop"),
-  updateShareParams: (quality: number, fps: number, audio: boolean) =>
-    invoke<void>("update_share_params", { quality, fps, audio }),
+  updateShareParams: (quality: number, fps: number, audio: boolean, showCursor: boolean) =>
+    invoke<void>("update_share_params", { quality, fps, audio, showCursor }),
   shareStart: (displayId: number) =>
     invoke<void>("share_start", { displayId }),
   shareStop: () => invoke<void>("share_stop"),

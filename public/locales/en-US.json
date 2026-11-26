@@ -6,7 +6,7 @@
     "share": "Start Sharing",
     "audience": "Viewers",
     "network": "Network",
-    "quality": "Audio and Quality",
+    "quality": "Video and Quality",
     "log": "Log",
     "about": "About"
   },
@@ -69,11 +69,12 @@
     "portHint": "The server restarts automatically when the port changes. Viewers open http://host-ip:port.\nIf viewers cannot connect, allow HiScreen through the firewall manually."
   },
   "quality": {
-    "title": "Audio and Quality Settings",
-    "pageTitle": "Audio and Quality",
+    "title": "Video and Quality Settings",
+    "pageTitle": "Video and Quality",
     "videoQuality": "Video quality",
     "targetFps": "Target FPS",
     "shareAudio": "Share system audio",
+    "showCursor": "Show mouse cursor",
     "videoSection": "Video and Audio",
     "deviceSection": "Device Status",
     "audioStatus": "Audio",

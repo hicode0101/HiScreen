@@ -48,6 +48,15 @@ function onAudio(value: boolean): void {
   void applyShareParams();
 }
 
+function onShowCursor(value: boolean): void {
+  settings.showCursor = value;
+  void persistSettings();
+  void applyShareParams();
+}
+
+// The cursor overlay is implemented for Windows captures only.
+const cursorSupported = navigator.userAgent.includes("Windows");
+
 onBeforeUnmount(() => {
   if (applyTimer !== null) clearTimeout(applyTimer);
 });
@@ -88,6 +97,14 @@ onBeforeUnmount(() => {
           @update:value="onAudio"
         />
         <span>{{ t("quality.shareAudio") }}</span>
+      </label>
+      <label v-if="cursorSupported" class="toggle-item">
+        <NSwitch
+          size="small"
+          :value="settings.showCursor"
+          @update:value="onShowCursor"
+        />
+        <span>{{ t("quality.showCursor") }}</span>
       </label>
     </div>
   </div>

@@ -86,6 +86,8 @@ pub struct Hub {
     pub share: Mutex<ShareState>,
     /// Whether audio streaming is enabled (toggled live).
     pub audio_on: AtomicBool,
+    /// Whether the mouse cursor is composited into the video frames.
+    pub cursor_on: AtomicBool,
     pub fps: AtomicU32,
     pub quality: AtomicU32,
 }
@@ -98,7 +100,7 @@ pub fn now_ms() -> u64 {
 }
 
 impl Hub {
-    pub fn new(fps: u32, quality: u32, audio_on: bool) -> Self {
+    pub fn new(fps: u32, quality: u32, audio_on: bool, cursor_on: bool) -> Self {
         let (video_tx, _) = broadcast::channel(4);
         let (audio_tx, _) = broadcast::channel(64);
         let (control_tx, _) = broadcast::channel(32);
@@ -114,6 +116,7 @@ impl Hub {
                 display: None,
             }),
             audio_on: AtomicBool::new(audio_on),
+            cursor_on: AtomicBool::new(cursor_on),
             fps: AtomicU32::new(fps),
             quality: AtomicU32::new(quality),
         }

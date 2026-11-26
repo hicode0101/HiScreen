@@ -189,10 +189,16 @@ pub fn server_stop(state: State<MediaState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Push live share parameters (quality / fps / audio) into the hub and
-/// re-broadcast the meta object to viewers.
+/// Push live share parameters (quality / fps / audio / cursor) into the hub
+/// and re-broadcast the meta object to viewers.
 #[tauri::command]
-pub fn update_share_params(state: State<MediaState>, quality: u32, fps: u32, audio: bool) {
+pub fn update_share_params(
+    state: State<MediaState>,
+    quality: u32,
+    fps: u32,
+    audio: bool,
+    show_cursor: bool,
+) {
     let hub = &state.hub;
     hub.quality.store(quality.clamp(1, 100), Ordering::Relaxed);
     hub.fps.store(fps.clamp(5, 60), Ordering::Relaxed);
@@ -201,6 +207,13 @@ pub fn update_share_params(state: State<MediaState>, quality: u32, fps: u32, aud
         state.hub.log(
             LogLevel::Info,
             if audio { "音频已开启" } else { "音频已关闭" },
+        );
+    }
+    let cursor_was = hub.cursor_on.swap(show_cursor, Ordering::Relaxed);
+    if cursor_was != show_cursor {
+        state.hub.log(
+            LogLevel::Info,
+            if show_cursor { "已显示鼠标光标" } else { "已隐藏鼠标光标" },
         );
     }
     hub.broadcast_meta();

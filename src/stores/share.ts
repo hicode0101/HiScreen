@@ -110,12 +110,14 @@ export async function loadPreview(id: number, force = false): Promise<void> {
   }
 }
 
-/** 1 Hz preview refresh; owned by ShareView so it only runs while visible. */
+/** 2 s preview refresh; owned by ShareView so it only runs while visible.
+ * Manual syncs (e.g. the source-refresh button) go through loadPreview
+ * directly so the frame updates immediately. */
 export function startPreviewLoop(): void {
   if (previewTimer !== null) return;
   previewTimer = window.setInterval(
     () => void loadPreview(share.selected, true),
-    1000,
+    2000,
   );
 }
 

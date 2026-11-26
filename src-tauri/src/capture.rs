@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use jpeg_encoder::{ColorType, Encoder};
 use scrap::{Capturer, Display};
 
+use crate::cursor;
 use crate::hub::{DisplayMeta, Hub, LogLevel, FRAME_VIDEO};
 
 /// One running capture session for a display; dropping it stops the thread.
@@ -102,6 +103,9 @@ fn run_capture(hub: Arc<Hub>, display_id: usize, stop: Arc<AtomicBool>) {
 fn capture_session(hub: &Hub, display_id: usize, stop: &AtomicBool) -> io::Result<()> {
     let display = find_display(display_id)?;
     let (w, h) = (display.width(), display.height());
+    // The cursor overlay needs the captured monitor's virtual-screen origin
+    // to translate the cursor's screen position into frame coordinates.
+    let origin = cursor::monitor_origin(display_id);
     let mut capturer = Capturer::new(display)?;
 
     let mut next_tick = Instant::now();
@@ -120,7 +124,15 @@ fn capture_session(hub: &Hub, display_id: usize, stop: &AtomicBool) -> io::Resul
                     // resolution change; skip this frame.
                     continue;
                 }
-                encode_and_broadcast(hub, &frame, w, h);
+                if hub.cursor_on.load(Ordering::Relaxed) && origin.is_some() {
+                    // The duplication image has no pointer in it; composite
+                    // the live cursor before encoding (one buffer copy).
+                    let mut with_cursor = frame.to_vec();
+                    cursor::draw_cursor(&mut with_cursor, w as i32, h as i32, origin.unwrap());
+                    encode_and_broadcast(hub, &with_cursor, w, h);
+                } else {
+                    encode_and_broadcast(hub, &frame, w, h);
+                }
             }
             Err(ref e)
                 if e.kind() == io::ErrorKind::WouldBlock

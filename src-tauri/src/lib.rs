@@ -6,6 +6,7 @@ pub mod audio;
 pub mod capture;
 pub mod commands;
 pub mod config;
+pub mod cursor;
 pub mod hub;
 pub mod server;
 
@@ -43,7 +44,7 @@ pub fn run() {
                 config: std::sync::Mutex::new(cfg.clone()),
             });
 
-            let hub = Arc::new(Hub::new(cfg.fps, cfg.quality, cfg.audio));
+            let hub = Arc::new(Hub::new(cfg.fps, cfg.quality, cfg.audio, cfg.show_cursor));
             app.manage(MediaState {
                 hub: hub.clone(),
                 server: std::sync::Mutex::new(ServerHandle::offline()),
