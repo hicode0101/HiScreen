@@ -315,11 +315,11 @@ fn run_unix(hub: Arc<Hub>, stop: Arc<AtomicBool>) {
         }
     }
     let Some(device) = device else {
-        hub.log(LogLevel::Error, "音频捕获失败: 未找到输入设备".into());
+        hub.log(LogLevel::Error, "音频捕获失败: 未找到输入设备");
         return;
     };
     let Ok(config) = device.default_input_config() else {
-        hub.log(LogLevel::Error, "音频捕获失败: 输入设备配置不可用".into());
+        hub.log(LogLevel::Error, "音频捕获失败: 输入设备配置不可用");
         return;
     };
 
@@ -356,11 +356,11 @@ fn run_unix(hub: Arc<Hub>, stop: Arc<AtomicBool>) {
         _ => Err(cpal::BuildStreamError::StreamConfigNotSupported),
     };
     let Ok(stream) = stream_result else {
-        hub.log(LogLevel::Error, "音频捕获失败: 不支持的采样格式".into());
+        hub.log(LogLevel::Error, "音频捕获失败: 不支持的采样格式");
         return;
     };
     if stream.play().is_err() {
-        hub.log(LogLevel::Error, "音频捕获失败: 设备启动失败".into());
+        hub.log(LogLevel::Error, "音频捕获失败: 设备启动失败");
         return;
     }
     hub.log(
