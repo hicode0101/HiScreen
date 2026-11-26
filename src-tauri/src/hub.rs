@@ -32,7 +32,7 @@ pub enum LogLevel {
 #[derive(Debug, Clone, Serialize)]
 pub struct LogEntry {
     /// Wall-clock timestamp formatted as `HH:MM:SS`.
-    pub ts: String,
+    pub ts: u64,
     pub level: LogLevel,
     pub msg: String,
 }
@@ -97,19 +97,6 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn now_ts() -> String {
-    let secs = (now_ms() / 1000) as i64;
-    // Local-time formatting without chrono: split from the epoch plus an
-    // offset guess is unreliable, so use UTC-based HH:MM:SS of the day.
-    let secs_of_day = secs.rem_euclid(86_400);
-    let (h, m, s) = (
-        secs_of_day / 3600,
-        (secs_of_day % 3600) / 60,
-        secs_of_day % 60,
-    );
-    format!("{h:02}:{m:02}:{s:02}")
-}
-
 impl Hub {
     pub fn new(fps: u32, quality: u32, audio_on: bool) -> Self {
         let (video_tx, _) = broadcast::channel(4);
@@ -139,7 +126,8 @@ impl Hub {
         eprintln!("[hiscreen:{level:?}] {msg}");
         let mut logs = self.logs.lock().unwrap();
         logs.push_back(LogEntry {
-            ts: now_ts(),
+            // Epoch millis; the frontend renders it in the local timezone.
+            ts: now_ms(),
             level,
             msg,
         });

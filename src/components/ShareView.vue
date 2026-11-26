@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from "vue";
+import { computed, onMounted, onUnmounted, watch } from "vue";
 import { NSelect } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { useMessage } from "naive-ui";
-import { share, loadPreview, selectDisplay, startShare, stopShare } from "@/stores/share";
+import {
+  share,
+  loadPreview,
+  selectDisplay,
+  startPreviewLoop,
+  stopPreviewLoop,
+  startShare,
+  stopShare,
+} from "@/stores/share";
 import { settings } from "@/stores/settings";
 import { openExternal } from "@/lib/tauri";
 import AudiencePanel from "./AudiencePanel.vue";
-import QualityControls from "./QualityControls.vue";
 import Icon from "./Icon.vue";
 
 const { t } = useI18n();
@@ -28,6 +35,13 @@ const recentLogs = computed(() => share.logs.slice(-5).reverse());
 
 onMounted(() => {
   void loadPreview(share.selected);
+  startPreviewLoop();
+});
+
+// The view is conditionally rendered, so unmounting stops the preview loop
+// together with the view's visibility.
+onUnmounted(() => {
+  stopPreviewLoop();
 });
 
 watch(
@@ -125,12 +139,6 @@ function openInBrowser(): void {
             </div>
             <div v-if="share.status.qr" class="qr-box" v-html="share.status.qr"></div>
           </div>
-        </section>
-
-        <!-- ------- audio & quality ------- -->
-        <section class="card">
-          <h3 class="section-title">{{ t("quality.title") }}</h3>
-          <QualityControls />
         </section>
       </div>
 

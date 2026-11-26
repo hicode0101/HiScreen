@@ -34,8 +34,6 @@ const portLabel = computed(() =>
       <span class="item">{{ t("status.viewers", { n: viewerCount }) }}</span>
     </div>
     <div class="side">
-      <span class="item">Tauri 2 · Vue 3 · Naive UI</span>
-      <span v-if="version" class="divider"></span>
       <span v-if="version" class="item">v{{ version }}</span>
     </div>
   </footer>

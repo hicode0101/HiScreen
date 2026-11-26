@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import { NButton, NInputNumber } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { useMessage } from "naive-ui";
-import { api, isTauri } from "@/lib/tauri";
+import { openExternal } from "@/lib/tauri";
 import { clampPort, persistSettings, settings } from "@/stores/settings";
 import { applyPort, share } from "@/stores/share";
 import Icon from "./Icon.vue";
@@ -37,17 +37,17 @@ async function savePort(): Promise<void> {
   }
 }
 
-async function allowFirewall(): Promise<void> {
-  if (!isTauri()) {
-    message.info(t("quality.browserHint"));
-    return;
-  }
-  try {
-    await api.addFirewallRule(settings.port);
-    message.success(t("quality.firewallOk"));
-  } catch {
-    message.error(t("quality.firewallFail"));
-  }
+function copyUrl(): void {
+  const url = share.status.url;
+  if (!url) return;
+  void navigator.clipboard
+    .writeText(url)
+    .then(() => message.success(t("share.copied")))
+    .catch(() => message.error(t("share.copyFailed")));
+}
+
+function openInBrowser(): void {
+  if (share.status.url) void openExternal(share.status.url);
 }
 </script>
 
@@ -60,7 +60,15 @@ async function allowFirewall(): Promise<void> {
       <div class="status-row">
         <span class="dot" :class="{ on: share.status.running }"></span>
         <span>{{ share.status.running ? t("network.running") : t("network.stopped") }}</span>
-        <span class="mono addr" v-if="share.status.running">{{ share.status.url }}</span>
+        <template v-if="share.status.running">
+          <span class="mono addr">{{ share.status.url }}</span>
+          <button class="icon-btn" :title="t('share.copy')" @click="copyUrl">
+            <Icon name="copy" :size="14" />
+          </button>
+          <button class="icon-btn" :title="t('share.open')" @click="openInBrowser">
+            <Icon name="globe" :size="14" />
+          </button>
+        </template>
       </div>
       <ul class="addr-list" v-if="addresses.length > 1">
         <li v-for="a in addresses.slice(1)" :key="a" class="mono">{{ a }}</li>
@@ -82,10 +90,6 @@ async function allowFirewall(): Promise<void> {
         />
         <NButton size="small" type="primary" :loading="saving" @click="void savePort()">
           {{ t("network.apply") }}
-        </NButton>
-        <NButton size="small" @click="void allowFirewall()">
-          <template #icon><Icon name="shield" :size="14" /></template>
-          {{ t("quality.firewall") }}
         </NButton>
       </div>
       <p class="hint">{{ t("network.portHint") }}</p>
@@ -139,6 +143,25 @@ async function allowFirewall(): Promise<void> {
   color: var(--accent);
 }
 
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .addr-list {
   margin: 10px 0 0;
   padding: 0 0 0 19px;
@@ -165,5 +188,6 @@ async function allowFirewall(): Promise<void> {
   font-size: 12.5px;
   color: var(--text-tertiary);
   line-height: 1.6;
+  white-space: pre-line;
 }
 </style>

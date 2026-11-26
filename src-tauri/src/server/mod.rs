@@ -232,14 +232,16 @@ async fn viewer_socket(socket: WebSocket, hub: Arc<Hub>, ip: IpAddr) {
 
 fn remove_viewer(hub: &Hub, entry: &Arc<ViewerEntry>) {
     hub.viewers.lock().unwrap().retain(|v| v.id != entry.id);
-    let browser = entry.browser_ref();
+    // Lead with the IP so join/leave entries line up in the log; the
+    // OS · browser identity follows once the hello message has filled it in.
     let os = entry.os.lock().unwrap().clone();
+    let browser = entry.browser_ref();
     let who = match (os.is_empty(), browser.is_empty()) {
-        (false, false) => format!("{os} · {browser}"),
-        (true, false) => browser,
-        _ => entry.addr.clone(),
+        (false, false) => format!(" ({os} · {browser})"),
+        (true, false) => format!(" ({browser})"),
+        _ => String::new(),
     };
-    hub.log(LogLevel::Info, format!("观众离开: {who}"));
+    hub.log(LogLevel::Info, format!("观众离开: {}{who}", entry.addr));
 }
 
 /// Interpret one control message from a viewer.

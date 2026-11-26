@@ -34,6 +34,8 @@ export const share = reactive({
 });
 
 let statusTimer: number | null = null;
+let previewTimer: number | null = null;
+let previewBusy = false;
 
 export async function initShare(): Promise<void> {
   await refreshDisplays();
@@ -58,6 +60,7 @@ export function disposeShare(): void {
     clearInterval(statusTimer);
     statusTimer = null;
   }
+  stopPreviewLoop();
 }
 
 export async function refreshDisplays(): Promise<void> {
@@ -75,13 +78,41 @@ export async function refreshDisplays(): Promise<void> {
   ];
 }
 
-/** Thumbnail data URLs are fetched once per display and kept for the session. */
-export async function loadPreview(id: number): Promise<void> {
-  if (share.previews[id] || !isTauri()) return;
+/**
+ * Thumbnail for the given display. Without `force` this only fetches when no
+ * thumbnail exists yet (first paint); the live preview loop passes `force`
+ * so the frame keeps refreshing at ~1 FPS. Transient failures keep the
+ * previous thumbnail on screen.
+ *
+ * Skipped entirely while sharing: the capture session owns the display's
+ * DXGI duplication, and a concurrent preview grab would clash with it.
+ */
+export async function loadPreview(id: number, force = false): Promise<void> {
+  if (!isTauri() || previewBusy || share.status.sharing) return;
+  if (!force && share.previews[id]) return;
+  previewBusy = true;
   try {
     share.previews[id] = await api.capturePreview(id);
   } catch {
-    // Thumbnail stays absent; the placeholder shows instead.
+    // Thumbnail fetch failed — keep whatever is already on screen.
+  } finally {
+    previewBusy = false;
+  }
+}
+
+/** 1 Hz preview refresh; owned by ShareView so it only runs while visible. */
+export function startPreviewLoop(): void {
+  if (previewTimer !== null) return;
+  previewTimer = window.setInterval(
+    () => void loadPreview(share.selected, true),
+    1000,
+  );
+}
+
+export function stopPreviewLoop(): void {
+  if (previewTimer !== null) {
+    clearInterval(previewTimer);
+    previewTimer = null;
   }
 }
 

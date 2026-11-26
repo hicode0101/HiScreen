@@ -9,6 +9,7 @@ pub mod config;
 pub mod hub;
 pub mod server;
 
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use config::AppConfig;
@@ -19,12 +20,17 @@ use tauri::Manager;
 use crate::config::AppState;
 
 /// Runtime handles for the sharing subsystem: the shared hub, the HTTP/WS
-/// server and the capture / audio threads (None while not sharing).
+/// server, the capture / audio threads (None while not sharing) and the
+/// long-lived preview grabber (dropped while sharing so the stream owns the
+/// display duplication).
 pub struct MediaState {
     pub hub: Arc<Hub>,
     pub server: Mutex<ServerHandle>,
     pub capture: Mutex<Option<capture::CaptureHandle>>,
     pub audio: Mutex<Option<audio::AudioHandle>>,
+    pub preview: Mutex<Option<capture::PreviewGrabber>>,
+    /// Last timestamp a preview failure was logged (rate limit: one per min).
+    pub preview_warn_ms: AtomicU64,
 }
 
 pub fn run() {
@@ -43,6 +49,8 @@ pub fn run() {
                 server: std::sync::Mutex::new(ServerHandle::offline()),
                 capture: std::sync::Mutex::new(None),
                 audio: std::sync::Mutex::new(None),
+                preview: std::sync::Mutex::new(None),
+                preview_warn_ms: AtomicU64::new(0),
             });
             hub.log(LogLevel::Info, "HiScreen 已启动");
 
@@ -106,7 +114,6 @@ pub fn run() {
             commands::kick_viewer,
             commands::get_logs,
             commands::clear_logs,
-            commands::add_firewall_rule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

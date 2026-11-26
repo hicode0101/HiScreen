@@ -9,6 +9,13 @@ const { t } = useI18n();
 
 const logs = computed(() => [...share.logs].reverse());
 
+/** Render an epoch-millis timestamp as local HH:MM:SS. */
+function formatTs(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 async function clearLogs(): Promise<void> {
   if (isTauri()) {
     try {
@@ -37,7 +44,7 @@ async function clearLogs(): Promise<void> {
         <li v-if="logs.length === 0" class="log-empty">{{ t("log.empty") }}</li>
         <li v-for="(log, i) in logs" :key="`${log.ts}-${i}`" class="log-item">
           <span class="log-dot" :class="log.level"></span>
-          <span class="log-ts mono">{{ log.ts }}</span>
+          <span class="log-ts mono">{{ formatTs(log.ts) }}</span>
           <span class="log-msg">{{ log.msg }}</span>
         </li>
       </ul>

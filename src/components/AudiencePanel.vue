@@ -7,8 +7,8 @@ import { share } from "@/stores/share";
 import Icon from "./Icon.vue";
 
 /**
- * Viewer table + broadcast input. `compact` renders without the kick column
- * (used on the share page); the dedicated audience page adds it.
+ * Viewer table + broadcast input. `compact` renders without the browser and
+ * kick columns (used on the share page); the dedicated audience page has them.
  */
 const props = defineProps<{ compact?: boolean }>();
 
@@ -65,8 +65,9 @@ async function kick(id: number): Promise<void> {
       <table class="aud-table">
         <thead>
           <tr>
+            <th>{{ t("audience.ip") }}</th>
             <th>{{ t("audience.device") }}</th>
-            <th>{{ t("audience.browser") }}</th>
+            <th v-if="!props.compact">{{ t("audience.browser") }}</th>
             <th>{{ t("audience.latency") }}</th>
             <th>{{ t("audience.connected") }}</th>
             <th>{{ t("audience.audio") }}</th>
@@ -75,16 +76,19 @@ async function kick(id: number): Promise<void> {
         </thead>
         <tbody>
           <tr v-if="viewers.length === 0">
-            <td colspan="6" class="empty">{{ t("audience.empty") }}</td>
+            <td :colspan="props.compact ? 5 : 7" class="empty">
+              {{ t("audience.empty") }}
+            </td>
           </tr>
           <tr v-for="v in viewers" :key="v.id">
+            <td class="mono">{{ v.addr || "—" }}</td>
             <td>
               <div class="device-cell">
                 <Icon name="display" :size="14" />
                 <span>{{ v.os || t("audience.unknown") }}</span>
               </div>
             </td>
-            <td>{{ v.browser || "—" }}</td>
+            <td v-if="!props.compact">{{ v.browser || "—" }}</td>
             <td class="mono">{{ v.latencyMs }} ms</td>
             <td class="mono">{{ formatFor(v.connectedForS) }}</td>
             <td>
@@ -197,6 +201,12 @@ async function kick(id: number): Promise<void> {
 
 .mono {
   font-variant-numeric: tabular-nums;
+}
+
+/* The compact panel is ~330px wide; tighten cells so the columns fit. */
+.compact .aud-table th,
+.compact .aud-table td {
+  padding-inline: 6px;
 }
 
 .empty {

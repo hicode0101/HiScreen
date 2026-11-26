@@ -24,7 +24,6 @@ export const icons: Record<string, string> = {
   stop: `<rect x="7.2" y="7.2" width="9.6" height="9.6" rx="1.6"/>`,
   send: `<path d="M20.4 3.6 3.8 10.6l6.2 2.3 2.2 6.4z"/><path d="M20.4 3.6 10 12.9"/>`,
   copy: `<rect x="8.6" y="8.6" width="11" height="11" rx="1.8"/><path d="M15.4 5.6V5A1.5 1.5 0 0 0 13.9 3.5H5A1.5 1.5 0 0 0 3.5 5v8.9A1.5 1.5 0 0 0 5 15.4h.6"/>`,
-  shield: `<path d="M12 3.4 5.4 5.9v5.3c0 4.4 2.7 7.8 6.6 9.4 3.9-1.6 6.6-5 6.6-9.4V5.9z"/>`,
   refresh: `<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 3.6v4.5h-4.5"/>`,
   qr: `<rect x="4" y="4" width="6.6" height="6.6" rx="1"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1"/><path d="M13.4 13.4h2.8v2.8h-2.8zM17 17h3v3h-3zM13.4 20h1.4"/>`,
 };

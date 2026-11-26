@@ -16,7 +16,7 @@ export const settings = reactive({
   quality: 80,
   fps: 30,
   audio: true,
-  autoStart: true,
+  autoStart: false,
   serverAutoStart: true,
 });
 
@@ -38,7 +38,8 @@ function normalize(cfg: Partial<typeof settings>): void {
   settings.quality = clampQuality(Number(cfg.quality) || 80);
   settings.fps = clampFps(Number(cfg.fps) || 30);
   settings.audio = cfg.audio !== false;
-  settings.autoStart = cfg.autoStart !== false;
+  // Opt-in: only an explicit true enables auto-start sharing.
+  settings.autoStart = cfg.autoStart === true;
   settings.serverAutoStart = cfg.serverAutoStart !== false;
 }
 

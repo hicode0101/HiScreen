@@ -46,12 +46,36 @@ pub fn list_displays() -> Result<Vec<DisplayMeta>, String> {
 
 /// One downscaled JPEG frame (base64 data URL) for display thumbnails.
 #[tauri::command]
-pub fn capture_preview(display_id: usize) -> Result<String, String> {
-    let jpeg = capture::capture_preview(display_id, 480).map_err(|e| e.to_string())?;
-    Ok(format!(
-        "data:image/jpeg;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(jpeg)
-    ))
+pub fn capture_preview(state: State<MediaState>, display_id: usize) -> Result<String, String> {
+    // While a capture session runs it owns the display duplication; a
+    // concurrent preview grab would fail with a driver conflict. The
+    // frontend pauses its preview loop while sharing — this is the
+    // backend-side guard against races around the share start/stop.
+    if state.capture.lock().unwrap().is_some() {
+        return Err("capture session in progress".into());
+    }
+    let mut slot = state.preview.lock().unwrap();
+    match capture::preview_frame(&mut slot, display_id, 480) {
+        Ok(jpeg) => Ok(format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(jpeg)
+        )),
+        // "No frame within the deadline" means the desktop is frozen; the
+        // frontend keeps showing the last thumbnail, so don't spam the log.
+        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => Err(e.to_string()),
+        Err(e) => {
+            // A lost desktop (locked screen, driver reset) fails every
+            // attempt until it recovers — log one entry per minute at most.
+            const WARN_INTERVAL_MS: u64 = 60_000;
+            let now = now_ms();
+            if now.saturating_sub(state.preview_warn_ms.load(Ordering::Relaxed)) > WARN_INTERVAL_MS
+            {
+                state.preview_warn_ms.store(now, Ordering::Relaxed);
+                state.hub.log(LogLevel::Warn, format!("预览采集失败: {e}"));
+            }
+            Err(e.to_string())
+        }
+    }
 }
 
 // --------------------------------------------------------------- server
@@ -228,9 +252,13 @@ pub fn share_stop(state: State<MediaState>) -> Result<(), String> {
 }
 
 /// Stop capture and audio threads (drops their handles, which signal stop).
+/// The preview grabber is dropped too so the display duplication is free for
+/// the capture session (share_start) and rebuilt on the next preview call
+/// (share_stop).
 fn stop_threads(state: &MediaState) {
     *state.capture.lock().unwrap() = None;
     *state.audio.lock().unwrap() = None;
+    *state.preview.lock().unwrap() = None;
 }
 
 #[tauri::command]
@@ -263,57 +291,6 @@ pub fn get_logs(state: State<MediaState>) -> Vec<LogEntry> {
 #[tauri::command]
 pub fn clear_logs(state: State<MediaState>) {
     state.hub.logs.lock().unwrap().clear();
-}
-
-// ------------------------------------------------------------- firewall
-
-/// Add a Windows Defender Firewall inbound rule for the share port.
-/// Needs an elevated shell to succeed; the error text says so otherwise.
-#[tauri::command]
-#[cfg(windows)]
-pub fn add_firewall_rule(state: State<MediaState>, port: u16) -> Result<String, String> {
-    use std::os::windows::process::CommandExt as _;
-
-    let name = "HiScreen Screen Share";
-    let output = std::process::Command::new("netsh")
-        .args([
-            "advfirewall",
-            "firewall",
-            "add",
-            "rule",
-            &format!("name={name}"),
-            "dir=in",
-            "action=allow",
-            "protocol=TCP",
-            &format!("localport={port}"),
-        ])
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .output()
-        .map_err(|e| e.to_string())?;
-    if output.status.success() {
-        state
-            .hub
-            .log(LogLevel::Success, format!("防火墙规则已添加 (TCP {port})"));
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        state
-            .hub
-            .log(LogLevel::Error, format!("防火墙规则添加失败: {err}"));
-        Err(if err.is_empty() {
-            "需要管理员权限运行".into()
-        } else {
-            err
-        })
-    }
-}
-
-/// Non-Windows platforms don't need a firewall helper (GUI prompts instead).
-#[tauri::command]
-#[cfg(not(windows))]
-pub fn add_firewall_rule(state: State<MediaState>, port: u16) -> Result<String, String> {
-    let _ = (state, port);
-    Ok("此平台无需配置防火墙".into())
 }
 
 /// LAN addresses the viewer URL can use; the default-route address first.

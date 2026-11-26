@@ -31,6 +31,7 @@
   "audience": {
     "title": "Viewers",
     "pageTitle": "Viewers",
+    "ip": "IP Address",
     "device": "Device",
     "browser": "Browser",
     "latency": "Latency",
@@ -58,14 +59,13 @@
     "apply": "Save and Apply",
     "portApplied": "Port setting applied",
     "portFailed": "Failed to apply port (maybe in use)",
-    "portHint": "The server restarts automatically when the port changes. Viewers open http://host-ip:port. If viewers cannot connect, use the firewall button to allow the port."
+    "portHint": "The server restarts automatically when the port changes. Viewers open http://host-ip:port.\nIf viewers cannot connect, allow HiScreen through the firewall manually."
   },
   "quality": {
     "title": "Audio and Quality Settings",
     "pageTitle": "Audio and Quality",
     "videoQuality": "Video quality",
     "targetFps": "Target FPS",
-    "firewall": "Allow Firewall",
     "shareAudio": "Share system audio",
     "autoStart": "Start sharing automatically",
     "videoSection": "Video and Audio",
@@ -75,10 +75,7 @@
     "audioOff": "Off",
     "captureStatus": "Capture",
     "fpsLive": "Sharing, target {fps} FPS",
-    "fpsIdle": "Idle",
-    "firewallOk": "Firewall rule added",
-    "firewallFail": "Failed to add firewall rule (admin required)",
-    "browserHint": "Browser debug mode: this action is unavailable"
+    "fpsIdle": "Idle"
   },
   "log": {
     "title": "Log",

@@ -31,6 +31,7 @@
   "audience": {
     "title": "观众管理",
     "pageTitle": "观众管理",
+    "ip": "IP 地址",
     "device": "设备",
     "browser": "浏览器",
     "latency": "延迟",
@@ -58,14 +59,13 @@
     "apply": "保存并应用",
     "portApplied": "端口设置已应用",
     "portFailed": "端口应用失败（可能被占用）",
-    "portHint": "修改端口后服务将自动重启；观众页访问地址为 http://主机IP:端口。若观众无法连接，请点击防火墙按钮放行端口。"
+    "portHint": "修改端口后服务将自动重启；观众页访问地址为 http://主机IP:端口\n若观众无法连接，请在系统防火墙中手动放行本应用。"
   },
   "quality": {
     "title": "音频与质量设置",
     "pageTitle": "音频与质量",
     "videoQuality": "视频质量",
     "targetFps": "目标帧率",
-    "firewall": "允许防火墙",
     "shareAudio": "分享系统声音",
     "autoStart": "自动开始分享",
     "videoSection": "视频与音频",
@@ -75,10 +75,7 @@
     "audioOff": "已关闭",
     "captureStatus": "捕获",
     "fpsLive": "分享中，目标 {fps} FPS",
-    "fpsIdle": "空闲",
-    "firewallOk": "防火墙规则已添加",
-    "firewallFail": "防火墙规则添加失败（需要管理员权限）",
-    "browserHint": "当前为浏览器调试模式，此操作不可用"
+    "fpsIdle": "空闲"
   },
   "log": {
     "title": "日志",

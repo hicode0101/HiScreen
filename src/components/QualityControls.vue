@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from "vue";
-import { NButton, NSelect, NSlider, NSwitch } from "naive-ui";
+import { NSelect, NSlider, NSwitch } from "naive-ui";
 import { useI18n } from "vue-i18n";
-import { useMessage } from "naive-ui";
-import { api, isTauri } from "@/lib/tauri";
 import {
   applyShareParams,
   clampFps,
@@ -14,11 +12,10 @@ import {
 
 /**
  * Shared audio & quality controls (video quality slider, target fps select,
- * audio toggle, auto-start toggle, firewall button) used on both the share
- * page and the dedicated quality page.
+ * audio toggle, auto-start toggle) used on both the share page and the
+ * dedicated quality page.
  */
 const { t } = useI18n();
-const message = useMessage();
 
 const fpsOptions = computed(() =>
   [10, 15, 20, 24, 30, 60].map((v) => ({ label: `${v} FPS`, value: v })),
@@ -57,19 +54,6 @@ function onAutoStart(value: boolean): void {
   void persistSettings();
 }
 
-async function allowFirewall(): Promise<void> {
-  if (!isTauri()) {
-    message.info(t("quality.browserHint"));
-    return;
-  }
-  try {
-    await api.addFirewallRule(settings.port);
-    message.success(t("quality.firewallOk"));
-  } catch {
-    message.error(t("quality.firewallFail"));
-  }
-}
-
 onBeforeUnmount(() => {
   if (applyTimer !== null) clearTimeout(applyTimer);
 });
@@ -100,9 +84,6 @@ onBeforeUnmount(() => {
         :options="fpsOptions"
         @update:value="onFps"
       />
-      <NButton size="small" @click="void allowFirewall()">
-        {{ t("quality.firewall") }}
-      </NButton>
     </div>
 
     <div class="row toggles">

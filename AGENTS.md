@@ -13,6 +13,7 @@
 - **线程生命周期**：采集/音频线程由 `MediaState` 的 `Mutex<Option<Handle>>` 托管，Drop 即置 stop 标志并 join；scrap 的 `frame()` 为 0ms 超时轮询（WouldBlock），停止分享无阻塞风险
 - **日志**：Rust `hub.log()` 写入 200 条环形缓冲；日志文案为中文（数据层，不走 i18n）
 - **事件顺序约定**：`share_start` 会先停旧线程再建新线程，并同步 `hub.share` + `broadcast_meta`；观众端始终以 meta 为准
+- **预览与推流互斥**：分享进行中 `capture_preview` 直接拒绝（后端检查 `MediaState.capture`，前端 `loadPreview` 检查 `status.sharing`），避免与推流线程抢占同一输出的 DXGI duplication——预览轮询由 ShareView 持有（1Hz），停止分享后自动恢复
 
 ## 1. 技术栈（固定，不得替换）
 
@@ -28,7 +29,7 @@
 src/
 ├─ main.ts            # 引导顺序固定：loadSettings → applyTheme → setLanguage → mount
 ├─ App.vue            # NConfigProvider 接线（主题/语言）+ 骨架（TitleBar/Sidebar/五视图/StatusBar + 弹窗）+ initShare()
-├─ components/        # 全部 Vue 组件（五视图：ShareView/AudienceView/NetworkView/QualityView/LogView；共用 AudiencePanel、QualityControls）
+├─ components/        # 全部 Vue 组件（五视图：ShareView/AudienceView/NetworkView/QualityView/LogView；AudiencePanel 在开始分享页与观众页复用）
 ├─ lib/               # 纯逻辑：i18n / theme / tauri(api 封装) / icons / appInfo / dialogDrag
 ├─ stores/            # settings.ts（持久化设置）、share.ts（运行时分享状态+轮询）、ui.ts（瞬时 UI 状态）
 ├─ theme/fluent.ts    # Naive UI GlobalThemeOverrides（fluentLight / fluentDark）
@@ -75,8 +76,8 @@ src-tauri/src/        # main.rs → lib.rs(Builder+MediaState) → config.rs →
 ## 7. 窗口与 UI
 
 - 窗口：`decorations:false` + 不透明（`transparent:false`，无 Mica，底色走 `--bg-window` 实色）+ 居中，1080×720 / min 800×560；全局禁用 WebView2 默认右键菜单——在 `lib.rs` setup 中经 `with_webview` 调 `ICoreWebView2Settings6::SetAreDefaultContextMenusEnabled(false)`（Windows）
-- 标题栏：整栏拖拽，右侧仅 最小化/最大化/关闭 三钮，关闭钮 hover `#c42b1c` 白字；**侧边栏**（替代脚手架菜单栏）：172px 左栏，五项导航（开始分享/观众管理/网络设置/音频与质量/日志），激活项 accent 左缘 3px 指示条；状态栏：服务状态点 + 端口 + 观众数 + 版本号（浏览器环境隐藏版本）
-- 弹窗：**一律用统一基础组件 `components/DialogCard.vue` 创建**（内部封装 `NModal` + `useDraggableCard`，含 Fluent 卡片样式、标题栏、关闭钮、footer 分隔线；遮罩点击与 Esc 一律不关闭，关闭仅能通过标题栏 X 或 footer 插槽按钮）。能力经 props 控制（**挂载时读取，运行时不响应变更**）：`draggable`（标题栏拖拽移动，默认 true）、`resizable`（边缘/四角缩放，默认 true，最小尺寸 `minWidth`/`minHeight`，视口四周留 24px）；`title`/`aria-label`/`close-label` 走 props，正文默认插槽、`footer` 具名插槽。不得各自手写 NModal + 拖拽/缩放接线
+- 标题栏：整栏拖拽，右侧为 ℹ 关于按钮（打开「关于」弹窗）+ 最小化/最大化/关闭 三钮，关闭钮 hover `#c42b1c` 白字；**侧边栏**（替代脚手架菜单栏）：172px 左栏，五项导航（开始分享/观众管理/网络设置/音频与质量/日志），激活项 accent 左缘 3px 指示条；状态栏：服务状态点 + 端口 + 观众数 + 版本号（浏览器环境隐藏版本）
+- 弹窗：**一律用统一基础组件 `components/DialogCard.vue` 创建**（内部封装 `NModal` + `useDraggableCard`，含 Fluent 卡片样式、标题栏、关闭钮、footer 分隔线；遮罩点击与 Esc 一律不关闭，关闭仅能通过标题栏 X 或 footer 插槽按钮）。能力经 props 控制（**挂载时读取，运行时不响应变更**）：`draggable`（标题栏拖拽移动，默认 true）、`resizable`（边缘/四角缩放，默认 true，最小尺寸 `minWidth`/`minHeight`，视口四周留 24px）；`title`/`aria-label`/`close-label` 走 props，正文默认插槽、`footer` 具名插槽。不得各自手写 NModal + 拖拽/缩放接线。「关于」弹窗（`:draggable="false" :resizable="false"`）承载版本信息与**主题/语言切换**（继承自脚手架设置弹窗，独立设置弹窗已删除）
 - **toast（操作反馈）**：右下角弹出（`NMessageProvider placement="bottom-right" :duration="4000" :max="3" keep-alive-on-hover`）；样式 = Fluent 卡片（fluent.ts `Message` 覆盖，值引用 CSS 变量）+ 左缘 3px 类型色条（global.css）。**类型语义强制**：操作成功 `message.success`（绿）、提醒/提示 `message.info`（蓝 accent）、操作失败 `message.error`（红）、警告 `message.warning`（黄）
 - 图标一律 `Icon.vue` + `lib/icons.ts` 行内 SVG（24 网格 1.6 描边），不引第三方图标库；`body` 上 `user-select:none`；滚动条用 global.css 的 Fluent 细样式
 
@@ -89,7 +90,8 @@ src-tauri/src/        # main.rs → lib.rs(Builder+MediaState) → config.rs →
 ## 9. IPC 与插件
 
 - 新增命令三步：`commands/mod.rs` 写 `#[tauri::command]` → `lib.rs` 注册 → `lib/tauri.ts` 的 `api` 封装
-- 现有命令：`get_config` `save_config` `app_version` `list_displays` `capture_preview` `server_status` `server_start` `server_stop` `update_share_params` `share_start` `share_stop` `broadcast_notice` `kick_viewer` `get_logs` `clear_logs` `add_firewall_rule`
+- 现有命令：`get_config` `save_config` `app_version` `list_displays` `capture_preview` `server_status` `server_start` `server_stop` `update_share_params` `share_start` `share_stop` `broadcast_notice` `kick_viewer` `get_logs` `clear_logs`
+- **防火墙策略**：应用不修改系统防火墙（`add_firewall_rule` 已删除，勿再实现类似命令）；连接问题在「网络设置」页给出手工放行指引，由用户自行配置
 - 所有前端代码必须兼容纯浏览器运行（`isTauri()` 分支 + try/catch），保证无 Tauri 时可独立调试与可视化验证（显示器/观众数据走 mock）
 - 外部链接用 `openExternal()`（Tauri 内走 opener 插件，浏览器降级 `window.open`）
 - 新增插件四处接线：Cargo.toml → `lib.rs` `.plugin()` → capabilities 权限（最小化）→ 前端封装

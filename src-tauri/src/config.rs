@@ -35,7 +35,9 @@ impl Default for AppConfig {
             quality: 80,
             fps: 30,
             audio: true,
-            auto_start: true,
+            // Sharing spawns the capture/encode threads; keep it opt-in so
+            // the first launch stays instant.
+            auto_start: false,
             server_auto_start: true,
         }
     }

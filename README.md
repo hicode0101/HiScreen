@@ -41,7 +41,7 @@ HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择�
 
 **网络与运维**
 
-- 🧱 **防火墙一键放行**：Windows 下自动添加 netsh 入站规则（需管理员）
+- 🧱 **防火墙手工配置**：应用不修改系统防火墙；网络设置页提供指引，观众连不上时按提示手工放行端口
 - 📝 **事件日志**：服务启动 / 观众进出 / 分享状态变化全程留痕，支持清空
 - ⚙️ **设置持久化**：端口 / 画质 / 帧率 / 音频 / 自动开始分享等全部保存于 `config.json`
 
@@ -85,7 +85,7 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-**使用流程**：启动 HiScreen → 服务自动监听 `:7870`（可在「网络设置」改端口）→「开始分享」选择显示器（默认开启自动分享）→ 观众浏览器打开界面上的地址或扫码即可观看。
+**使用流程**：启动 HiScreen → 服务自动监听 `:7870`（可在「网络设置」改端口）→「开始分享」选择显示器并点击开始（默认不自动分享，可在「音频与质量」打开「自动开始分享」）→ 观众浏览器打开界面上的地址或扫码即可观看。
 
 **纯浏览器调试**（不带 Tauri 窗口，后端功能自动降级）：
 
@@ -144,9 +144,9 @@ HiScreen/
 │  │  ├─ ShareView.vue            # 开始分享主视图（预览/来源/地址/二维码/事件流）
 │  │  ├─ AudienceView.vue         # 观众管理全页（含踢除）
 │  │  ├─ AudiencePanel.vue        # 观众表格 + 广播通知（share 页与观众页共用）
-│  │  ├─ NetworkView.vue          # 网络设置（端口/防火墙/地址列表）
+│  │  ├─ NetworkView.vue          # 网络设置（端口/地址列表/防火墙手工放行指引）
 │  │  ├─ QualityView.vue          # 音频与质量全页
-│  │  ├─ QualityControls.vue      # 质量/帧率/音频/自动分享控件（share 页与质量页共用）
+│  │  ├─ QualityControls.vue      # 质量/帧率/音频/自动分享控件（音频与质量页）
 │  │  ├─ LogView.vue              # 事件日志
 │  │  ├─ StatusBar.vue            # 状态栏（服务状态/观众数/版本号）
 │  │  ├─ AboutDialog.vue          # 关于弹窗（版本信息 + 主题/语言切换，标题栏 ℹ 按钮打开）
@@ -171,7 +171,7 @@ HiScreen/
       ├─ hub.rs                   # 共享中枢：广播通道/观众注册表/日志环/分享状态
       ├─ capture.rs               # 屏幕枚举/采集线程/JPEG 编码/预览缩略图
       ├─ audio.rs                 # 音频采集（WASAPI loopback / cpal）+ 重采样分片
-      ├─ commands/mod.rs          # 全部 Tauri 命令（displays/server/share/notice/logs/防火墙）
+      ├─ commands/mod.rs          # 全部 Tauri 命令（displays/server/share/notice/logs）
       └─ server/
          ├─ mod.rs                # axum HTTP + WebSocket 服务（观众会话/心跳/踢除）
          └─ viewer.html           # 自包含观众页（视频/音频/统计/截图/全屏/通知）

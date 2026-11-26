@@ -43,7 +43,7 @@ export interface ServerStatus {
 }
 
 export interface LogEntry {
-  ts: string;
+  ts: number;
   level: "info" | "success" | "warn" | "error";
   msg: string;
 }
@@ -83,6 +83,4 @@ export const api = {
   kickViewer: (id: number) => invoke<void>("kick_viewer", { id }),
   getLogs: () => invoke<LogEntry[]>("get_logs"),
   clearLogs: () => invoke<void>("clear_logs"),
-  addFirewallRule: (port: number) =>
-    invoke<string>("add_firewall_rule", { port }),
 };

@@ -153,19 +153,122 @@ fn encode_and_broadcast(hub: &Hub, frame: &[u8], w: usize, h: usize) {
     let _ = hub.video.send(Arc::from(msg));
 }
 
-/// Grab a single frame of the given display, downscaled to `max_width`,
-/// encoded as JPEG — used for the host-side display selector thumbnails.
-pub fn capture_preview(display_id: usize, max_width: u32) -> io::Result<Vec<u8>> {
-    let display = find_display(display_id)?;
-    let (w, h) = (display.width(), display.height());
-    let mut capturer = Capturer::new(display)?;
-    let frame = capturer.frame()?;
-    if frame.len() < w * h * 4 {
-        return Err(io::Error::new(io::ErrorKind::Other, "short frame buffer"));
+/// Mean of sampled B+G+R bytes (the alpha byte at i%4==3 is skipped) —
+/// near 0 for the black pre-composition buffers DXGI hands out first.
+fn frame_mean_rgb(frame: &[u8]) -> f32 {
+    let (mut sum, mut n) = (0u64, 0u64);
+    let mut i = 0;
+    while i + 3 < frame.len() {
+        if i % 4 != 3 {
+            sum += (frame[i] as u64) + (frame[i + 1] as u64) + (frame[i + 2] as u64);
+            n += 1;
+        }
+        i += 4;
     }
+    if n == 0 { 0.0 } else { sum as f32 / n as f32 / 3.0 }
+}
+
+/// Long-lived preview capturer: one DXGI duplication kept alive across calls
+/// instead of a fresh D3D11 device per second (constant device churn degrades
+/// the driver over time). `last_jpeg` is the newest successful thumbnail and
+/// is reused when the desktop stays static between polls.
+pub struct PreviewGrabber {
+    display_id: usize,
+    w: usize,
+    h: usize,
+    capturer: Capturer,
+    last_jpeg: Option<Vec<u8>>,
+}
+
+impl PreviewGrabber {
+    fn new(display_id: usize) -> io::Result<Self> {
+        let display = find_display(display_id)?;
+        let (w, h) = (display.width(), display.height());
+        Ok(Self {
+            display_id,
+            w,
+            h,
+            capturer: Capturer::new(display)?,
+            last_jpeg: None,
+        })
+    }
+}
+
+// SAFETY: scrap's Capturer holds raw D3D11/DXGI pointers and is not `Send`
+// only because scrap never needs to cross threads itself. The grabber is
+// exclusively accessed while holding the preview mutex — one thread at a
+// time — and D3D11 interfaces are apartment-free, so serialized use from
+// different threads is sound.
+unsafe impl Send for PreviewGrabber {}
+
+/// Grab the newest preview frame of the given display, downscaled to
+/// `max_width`, encoded as JPEG — the host-side display thumbnail and live
+/// preview.
+///
+/// A fresh DXGI duplication may first hand out a pre-composition (black)
+/// buffer, and later frames only arrive with desktop updates, so poll briefly
+/// for a frame that shows content. Once a thumbnail exists it is returned
+/// unchanged whenever no newer frame arrives (static desktop), and failures
+/// drop the grabber so the next call rebuilds a fresh duplication.
+pub fn preview_frame(
+    slot: &mut Option<PreviewGrabber>,
+    display_id: usize,
+    max_width: u32,
+) -> io::Result<Vec<u8>> {
+    const DEADLINE: Duration = Duration::from_millis(1500);
+    if slot.as_ref().map(|g| g.display_id) != Some(display_id) {
+        *slot = None;
+    }
+    if slot.is_none() {
+        *slot = Some(PreviewGrabber::new(display_id)?);
+    }
+
+    let started = Instant::now();
+    loop {
+        let grabber = slot.as_mut().unwrap();
+        match grabber.capturer.frame() {
+            Ok(frame) if frame.len() >= grabber.w * grabber.h * 4 => {
+                if frame_mean_rgb(&frame) > 2.0 {
+                    let jpeg = encode_thumbnail(&frame, grabber.w, grabber.h, max_width)?;
+                    grabber.last_jpeg = Some(jpeg.clone());
+                    break Ok(jpeg);
+                }
+                // Pre-composition (black) buffer — keep waiting for content.
+            }
+            Ok(_) => {} // short buffer right after a resolution change; retry
+            Err(ref e)
+                if e.kind() == io::ErrorKind::WouldBlock
+                    || e.kind() == io::ErrorKind::TimedOut =>
+            {
+                // No desktop update since the last poll — reuse the newest
+                // thumbnail when one exists.
+                if let Some(jpeg) = grabber.last_jpeg.clone() {
+                    break Ok(jpeg);
+                }
+            }
+            Err(e) => {
+                // Duplication lost (mode change, locked desktop, driver
+                // reset) — rebuild a fresh grabber on the next call.
+                *slot = None;
+                break Err(e);
+            }
+        }
+        if started.elapsed() >= DEADLINE {
+            break slot
+                .as_mut()
+                .unwrap()
+                .last_jpeg
+                .clone()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "no frame captured"));
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn encode_thumbnail(frame: &[u8], w: usize, h: usize, max_width: u32) -> io::Result<Vec<u8>> {
     let scale = ((w as f32 / max_width as f32).ceil() as usize).max(1);
     let (dw, dh) = ((w / scale).max(1), (h / scale).max(1));
-    let small = downscale_bgra(&frame, w, h, dw, dh);
+    let small = downscale_bgra(frame, w, h, dw, dh);
     let mut jpeg = Vec::with_capacity(32 * 1024);
     let encoder = Encoder::new(&mut jpeg, 70);
     encoder
