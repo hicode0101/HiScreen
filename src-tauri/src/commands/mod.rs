@@ -12,6 +12,7 @@ use crate::audio;
 use crate::capture;
 use crate::config::{AppConfig, AppState};
 use crate::hub::{now_ms, DisplayMeta, LogEntry, LogLevel, ViewerEntry};
+use crate::mic;
 use crate::server;
 use crate::MediaState;
 
@@ -217,6 +218,50 @@ pub fn update_share_params(
         );
     }
     hub.broadcast_meta();
+}
+
+// ------------------------------------------------------------ microphone
+
+/// All capture (microphone) device names for the host UI dropdown.
+#[tauri::command]
+pub fn list_mics() -> Result<Vec<String>, String> {
+    mic::list_devices().map_err(|e| e.to_string())
+}
+
+/// Latest mic input level in dBFS × 10 (-900..=0) for the live meter.
+#[tauri::command]
+pub fn get_mic_level(state: State<MediaState>) -> i32 {
+    state.hub.mic_level_db10.load(Ordering::Relaxed)
+}
+
+/// Apply mic settings to the live capture thread. Persistence is handled
+/// separately by the frontend via save_config (mirroring share params).
+#[tauri::command]
+pub fn update_mic_params(state: State<MediaState>, enabled: bool, device: String, volume: u32) {
+    let hub = &state.hub;
+    hub.mic_gain_pct
+        .store(volume.clamp(0, 200), Ordering::Relaxed);
+
+    let device = device.trim().to_string();
+    let was_on = hub.mic_on.swap(enabled, Ordering::Relaxed);
+    let mut slot = state.mic.lock().unwrap();
+
+    if enabled {
+        // (Re)open the device when the thread is missing or a different
+        // device was picked; a pure volume change just uses the new gain.
+        let needs_restart = slot.as_ref().map(|h| h.device != device).unwrap_or(true);
+        if needs_restart {
+            *slot = None; // dropping the handle stops the old thread
+            *slot = Some(mic::start(hub.clone(), Some(device)));
+        }
+        if !was_on {
+            hub.log(LogLevel::Info, "麦克风已开启");
+        }
+    } else if was_on || slot.is_some() {
+        *slot = None;
+        hub.mic_level_db10.store(-900, Ordering::Relaxed);
+        hub.log(LogLevel::Info, "麦克风已停用");
+    }
 }
 
 // ---------------------------------------------------------------- share

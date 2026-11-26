@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { NButton, NSelect, useMessage } from "naive-ui";
+import { NButton, NSelect, NTooltip, useMessage } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { api, isTauri } from "@/lib/tauri";
 import { share } from "@/stores/share";
@@ -128,13 +128,18 @@ async function kick(id: number): Promise<void> {
         :placeholder="t('audience.noticePlaceholder')"
         @keydown.enter="void sendNotice()"
       />
-      <NSelect
-        class="notice-duration"
-        size="small"
-        :value="noticeDuration"
-        :options="durationOptions"
-        @update:value="(v: number) => (noticeDuration = v)"
-      />
+      <NTooltip trigger="hover" placement="top">
+        <template #trigger>
+          <NSelect
+            class="notice-duration"
+            size="small"
+            :value="noticeDuration"
+            :options="durationOptions"
+            @update:value="(v: number) => (noticeDuration = v)"
+          />
+        </template>
+        {{ t("audience.durationTip") }}
+      </NTooltip>
       <NButton type="primary" size="small" @click="void sendNotice()">
         {{ t("audience.send") }}
       </NButton>

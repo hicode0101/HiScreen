@@ -8,9 +8,10 @@ pub mod commands;
 pub mod config;
 pub mod cursor;
 pub mod hub;
+pub mod mic;
 pub mod server;
 
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use config::AppConfig;
@@ -29,6 +30,9 @@ pub struct MediaState {
     pub server: Mutex<ServerHandle>,
     pub capture: Mutex<Option<capture::CaptureHandle>>,
     pub audio: Mutex<Option<audio::AudioHandle>>,
+    /// Mic capture thread; independent of the share session (also runs while
+    /// idle so the host can watch the live level meter).
+    pub mic: Mutex<Option<mic::MicHandle>>,
     pub preview: Mutex<Option<capture::PreviewGrabber>>,
     /// Last timestamp a preview failure was logged (rate limit: one per min).
     pub preview_warn_ms: AtomicU64,
@@ -45,14 +49,21 @@ pub fn run() {
             });
 
             let hub = Arc::new(Hub::new(cfg.fps, cfg.quality, cfg.audio, cfg.showCursor));
+            hub.mic_gain_pct.store(cfg.micVolume, Ordering::Relaxed);
             app.manage(MediaState {
                 hub: hub.clone(),
                 server: std::sync::Mutex::new(ServerHandle::offline()),
                 capture: std::sync::Mutex::new(None),
                 audio: std::sync::Mutex::new(None),
+                mic: std::sync::Mutex::new(None),
                 preview: std::sync::Mutex::new(None),
                 preview_warn_ms: AtomicU64::new(0),
             });
+            // The mixer pacer idles until mic mixing (mic_on) is enabled; it
+            // owns the audio broadcast so system + mic never double-send.
+            audio::start_mixer(hub.clone());
+            // The mic always starts OFF: enabling it is a session-only choice
+            // (update_mic_params), never restored from the config file.
             hub.log(LogLevel::Info, "HiScreen 已启动");
 
             // Bring the HTTP/WS server up before the window shows so the
@@ -109,6 +120,9 @@ pub fn run() {
             commands::server_start,
             commands::server_stop,
             commands::update_share_params,
+            commands::list_mics,
+            commands::get_mic_level,
+            commands::update_mic_params,
             commands::share_start,
             commands::share_stop,
             commands::broadcast_notice,

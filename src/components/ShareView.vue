@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from "vue";
-import { NSelect } from "naive-ui";
+import { NSelect, NTooltip } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { useMessage } from "naive-ui";
 import {
   share,
   loadPreview,
+  PREVIEW_INTERVAL_MS,
   refreshDisplays,
   selectDisplay,
   startPreviewLoop,
@@ -93,12 +94,17 @@ async function refreshSources(): Promise<void> {
       <div class="left-col">
         <!-- ------- share card ------- -->
         <section class="card share-card">
-          <div class="preview-box">
-            <img v-if="preview" :src="preview" alt="display preview" />
-            <div v-else class="preview-empty">
-              <Icon name="display" :size="44" />
-            </div>
-          </div>
+          <NTooltip trigger="hover" placement="top">
+            <template #trigger>
+              <div class="preview-box">
+                <img v-if="preview" :src="preview" alt="display preview" />
+                <div v-else class="preview-empty">
+                  <Icon name="display" :size="44" />
+                </div>
+              </div>
+            </template>
+            {{ t("share.previewTip", { n: PREVIEW_INTERVAL_MS / 1000 }) }}
+          </NTooltip>
 
           <div class="meta-row">
             <div class="fields">

@@ -25,6 +25,13 @@ pub struct AppConfig {
     /// Whether the mouse cursor is composited into the shared video
     #[serde(alias = "show_cursor")]
     pub showCursor: bool,
+    /// Microphone device name; empty = system default. The mic on/off state
+    /// is session-only (always off at launch) and is not persisted.
+    #[serde(alias = "mic_device")]
+    pub micDevice: String,
+    /// Mic volume in percent (0..=200)
+    #[serde(alias = "mic_volume")]
+    pub micVolume: u32,
     /// Start sharing the primary display when the app launches
     #[serde(alias = "auto_start")]
     pub autoStart: bool,
@@ -44,6 +51,8 @@ impl Default for AppConfig {
             audio: true,
             // Viewers normally expect to see the host mouse pointer.
             showCursor: true,
+            micDevice: String::new(),
+            micVolume: 100,
             // Sharing spawns the capture/encode threads; keep it opt-in so
             // the first launch stays instant.
             autoStart: false,
@@ -58,6 +67,7 @@ impl AppConfig {
         self.port = self.port.clamp(1024, 65535);
         self.quality = self.quality.clamp(1, 100);
         self.fps = self.fps.clamp(5, 60);
+        self.micVolume = self.micVolume.clamp(0, 200);
         self
     }
 }

@@ -8,6 +8,8 @@ export interface AppConfig {
   fps: number;
   audio: boolean;
   showCursor: boolean;
+  micDevice: string;
+  micVolume: number;
   autoStart: boolean;
   serverAutoStart: boolean;
 }
@@ -76,6 +78,10 @@ export const api = {
   serverStop: () => invoke<void>("server_stop"),
   updateShareParams: (quality: number, fps: number, audio: boolean, showCursor: boolean) =>
     invoke<void>("update_share_params", { quality, fps, audio, showCursor }),
+  listMics: () => invoke<string[]>("list_mics"),
+  getMicLevel: () => invoke<number>("get_mic_level"),
+  updateMicParams: (enabled: boolean, device: string, volume: number) =>
+    invoke<void>("update_mic_params", { enabled, device, volume }),
   shareStart: (displayId: number) =>
     invoke<void>("share_start", { displayId }),
   shareStop: () => invoke<void>("share_stop"),

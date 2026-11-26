@@ -110,6 +110,10 @@ export async function loadPreview(id: number, force = false): Promise<void> {
   }
 }
 
+/** Preview refresh cadence; the ShareView tooltip shows the same number so
+ * the UI copy can never drift from the actual loop interval. */
+export const PREVIEW_INTERVAL_MS = 2000;
+
 /** 2 s preview refresh; owned by ShareView so it only runs while visible.
  * Manual syncs (e.g. the source-refresh button) go through loadPreview
  * directly so the frame updates immediately. */
@@ -117,7 +121,7 @@ export function startPreviewLoop(): void {
   if (previewTimer !== null) return;
   previewTimer = window.setInterval(
     () => void loadPreview(share.selected, true),
-    2000,
+    PREVIEW_INTERVAL_MS,
   );
 }
 

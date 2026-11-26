@@ -4,12 +4,14 @@
 //! every WebSocket task talks to the hub instead of to each other.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tokio::sync::broadcast;
+
+use crate::audio::AudioBus;
 
 /// First byte of every binary WebSocket frame identifies the payload type.
 pub const FRAME_VIDEO: u8 = 1;
@@ -86,6 +88,15 @@ pub struct Hub {
     pub share: Mutex<ShareState>,
     /// Whether audio streaming is enabled (toggled live).
     pub audio_on: AtomicBool,
+    /// Whether mic mixing is active: routes system audio into the mixer bus
+    /// and lets the 20 ms mixer pacer own the audio broadcast.
+    pub mic_on: AtomicBool,
+    /// Mic capture volume in percent (0..=200, 100 = unity).
+    pub mic_gain_pct: AtomicU32,
+    /// Last mic level in dBFS × 10 (-900..=0) for the host UI meter.
+    pub mic_level_db10: AtomicI32,
+    /// Pending 48 kHz mono samples for the mixer (system + mic sources).
+    pub audio_bus: AudioBus,
     /// Whether the mouse cursor is composited into the video frames.
     pub cursor_on: AtomicBool,
     pub fps: AtomicU32,
@@ -116,6 +127,10 @@ impl Hub {
                 display: None,
             }),
             audio_on: AtomicBool::new(audio_on),
+            mic_on: AtomicBool::new(false),
+            mic_gain_pct: AtomicU32::new(100),
+            mic_level_db10: AtomicI32::new(-900),
+            audio_bus: AudioBus::default(),
             cursor_on: AtomicBool::new(cursor_on),
             fps: AtomicU32::new(fps),
             quality: AtomicU32::new(quality),

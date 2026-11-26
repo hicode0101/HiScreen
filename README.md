@@ -4,7 +4,7 @@
 
 **Rust + Tauri 2 + Vue 3 打造的局域网屏幕分享工具**
 
-主机选择任意屏幕开始分享 · 观众用浏览器扫码即看 · 系统声音同步 · 观众管理 · 跨平台（Windows / macOS / Linux）
+主机选择任意屏幕开始分享 · 观众用浏览器扫码即看 · 系统声音 / 麦克风同步 · 观众管理 · 跨平台（Windows / macOS / Linux）
 
 ![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)
 ![Tauri](https://img.shields.io/badge/2.x-24C8D8?logo=tauri&logoColor=white)
@@ -33,7 +33,7 @@
 
 ## 简介
 
-HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择要分享的显示器并点击「开始分享」，同一局域网内的任何设备（手机 / 平板 / 电脑）用浏览器访问 `http://主机IP:7870` 即可实时观看画面与收听系统声音，无需安装任何客户端。
+HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择要分享的显示器并点击「开始分享」，同一局域网内的任何设备（手机 / 平板 / 电脑）用浏览器访问 `http://主机IP:7870` 即可实时观看画面与收听声音（系统声音 / 麦克风），无需安装任何客户端。
 
 ## ✨ 功能特性
 
@@ -42,6 +42,7 @@ HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择�
 - 🖥️ **多显示器选择**：枚举所有物理显示器（分辨率 / 主显示器标记），选择任意一块开始分享，分享中可实时切换
 - 🌐 **浏览器观看**：观众页零依赖（HTTP + WebSocket 自包含页面），视频 JPEG 帧流 + 音频 PCM 流，自动重连
 - 🔊 **系统声音分享**：Windows 通过 WASAPI loopback 采集系统声音；macOS / Linux 优先取 PulseAudio/PipeWire monitor 源（否则麦克风）
+- 🎙️ **麦克风语音分享**：「视频与质量」页开启麦克风（默认关闭、会话级开关，每次启动都不开启），可选设备（下拉 + 刷新按钮）、调节音量（0–200%），绿→黄→红渐变实时电平条试音；开启后与系统声音自动混音推流
 - 🎛️ **画质可调**：视频质量（JPEG 质量 10–100%）与目标帧率（10–60 FPS）实时生效，无需重启分享
 - 🖱️ **鼠标光标分享**：可开关的鼠标光标叠加（Windows 采集时合成进视频帧，观众可见光标移动）
 - 📱 **扫码即看**：主机 UI 内嵌二维码，手机扫码直达观众页
@@ -50,13 +51,14 @@ HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择�
 
 - 👥 **实时观众列表**：设备系统 / 浏览器 / 延迟（RTT）/ 已连接时长 / 音频开关状态
 - 📢 **广播通知**：主机发送文字通知，所有观众页弹横幅提示，可指定停留时长（5 秒 ~ 60 分钟）
+- 📊 **声音电平条**：观众页收到声音时显示绿→黄→红渐变 dB 电平条（数值同步显示），可一键开关显示
 - ⛔ **断开观众**：单独踢除任意观众连接
 
 **网络与运维**
 
 - 🧱 **防火墙手工配置**：应用不修改系统防火墙；网络设置页提供指引，观众连不上时按提示手工放行端口
 - 📝 **事件日志**：服务启动 / 观众进出 / 分享状态变化全程留痕，支持清空
-- ⚙️ **设置持久化**：端口 / 画质 / 帧率 / 音频 / 自动开始分享等全部保存于 `config.json`
+- ⚙️ **设置持久化**：端口 / 画质 / 帧率 / 音频 / 麦克风设备与音量 / 自动开始分享等全部保存于 `config.json`
 
 **界面（继承脚手架基座）**
 
@@ -71,7 +73,7 @@ HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择�
 | 前端 | Vue 3 `<script setup>`、TypeScript strict、Vite 7、Naive UI 2.x、vue-i18n 11 |
 | 屏幕采集 | scrap 0.5（Windows DXGI / macOS CoreGraphics / Linux X11） |
 | 视频编码 | jpeg-encoder（BGRA → JPEG，质量可调） |
-| 音频采集 | Windows WASAPI loopback（windows crate 直调）；Unix 平台 cpal |
+| 音频采集 | Windows WASAPI loopback（windows crate 直调）；麦克风 cpal（全平台），开启后与系统声音 20ms 混音推流 |
 | 分发服务 | tokio + axum（HTTP 静态页 + WebSocket 双向流） |
 
 推流协议：WebSocket 二进制帧，首字节为类型（`1`=JPEG 视频，`2`=i16 48kHz 单声道 PCM 音频，20ms 分片）；控制面为 JSON 文本帧（meta / notice / ping-pong / stats）。
@@ -130,7 +132,7 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 - **Windows x64**：NSIS + MSI 安装包、单 exe 绿色便携 zip（解压即用）
-- **Linux x64**：AppImage + deb（CI 已安装 libasound2-dev 供音频采集）
+- **Linux x64**：AppImage + deb（CI 已安装 libasound2-dev 与 xcb 开发库，供音频 / 屏幕采集链接）
 - **macOS arm64**（M 系列）与 **macOS Intel**（在 arm64 runner 上交叉编译）
 - 版本号以 tag 为准，构建前自动同步写入 Cargo.toml / package.json
 
@@ -153,13 +155,13 @@ HiScreen/
 │  ├─ App.vue                     # NConfigProvider 接线 + 标题栏/侧边栏/六视图/状态栏骨架
 │  ├─ components/
 │  │  ├─ TitleBar.vue             # 自绘标题栏
-│  │  ├─ Sidebar.vue              # 左侧导航（开始分享/观众/网络/视频质量/日志/关于）
+│  │  ├─ Sidebar.vue              # 左侧导航（开始分享/观众管理/网络设置/视频与质量/日志/关于）
 │  │  ├─ ShareView.vue            # 开始分享主视图（预览/来源/地址/二维码/事件流）
 │  │  ├─ AudienceView.vue         # 观众管理全页（含踢除）
 │  │  ├─ AudiencePanel.vue        # 观众表格 + 广播通知（share 页与观众页共用）
 │  │  ├─ NetworkView.vue          # 网络设置（端口/地址列表/防火墙手工放行指引）
 │  │  ├─ QualityView.vue          # 视频与质量全页
-│  │  ├─ QualityControls.vue      # 质量/帧率/音频/光标控件（视频与质量页）
+│  │  ├─ QualityControls.vue      # 质量/帧率/音频/光标/麦克风控件（视频与质量页）
 │  │  ├─ LogView.vue              # 事件日志
 │  │  ├─ StatusBar.vue            # 状态栏（服务状态/观众数/版本号）
 │  │  ├─ AboutView.vue           # 关于页（版本信息 + 主题/语言切换，侧边栏「关于」进入）
@@ -169,7 +171,7 @@ HiScreen/
 │  │  ├─ tauri.ts                 # invoke 封装（api 对象：displays/server/share/logs 等命令）
 │  │  ├─ i18n.ts / theme.ts / dialogDrag.ts / appInfo.ts / icons.ts
 │  ├─ stores/
-│  │  ├─ settings.ts              # 持久化设置（端口/画质/帧率/音频/自动分享）
+│  │  ├─ settings.ts              # 持久化设置（端口/画质/帧率/音频/麦克风设备与音量/自动分享）
 │  │  ├─ share.ts                 # 运行时状态：显示器列表/缩略图/服务状态轮询/日志
 │  │  └─ ui.ts                    # 瞬时 UI 状态（当前视图/弹窗开关）
 │  ├─ theme/fluent.ts             # Naive UI 浅色/深色 GlobalThemeOverrides
@@ -179,15 +181,17 @@ HiScreen/
    ├─ Cargo.toml                  # 版本号唯一来源；lib 名 = HiScreen_lib
    └─ src/
       ├─ main.rs                  # HiScreen_lib::run()
-      ├─ lib.rs                   # Builder：MediaState 托管 + 命令注册 + 服务自启动
-      ├─ config.rs                # AppConfig：主题/语言/端口/画质/帧率/音频/自动分享
+      ├─ lib.rs                   # Builder：MediaState 托管 + 命令注册 + 混音器 + 服务自启动
+      ├─ config.rs                # AppConfig：主题/语言/端口/画质/帧率/音频/麦克风设备与音量/自动分享
       ├─ hub.rs                   # 共享中枢：广播通道/观众注册表/日志环/分享状态
       ├─ capture.rs               # 屏幕枚举/采集线程/JPEG 编码/预览缩略图
-      ├─ audio.rs                 # 音频采集（WASAPI loopback / cpal）+ 重采样分片
+      ├─ cursor.rs                # 鼠标光标 GDI 合成（Windows，推流帧叠加）
+      ├─ audio.rs                 # 音频采集（WASAPI loopback / cpal）+ 重采样分片 + 系统声/麦克风混音
+      ├─ mic.rs                   # 麦克风采集（cpal 全平台）：设备枚举/音量/电平表
       ├─ commands/mod.rs          # 全部 Tauri 命令（displays/server/share/notice/logs）
       └─ server/
          ├─ mod.rs                # axum HTTP + WebSocket 服务（观众会话/心跳/踢除）
-         └─ viewer.html           # 自包含观众页（视频/音频/统计/截图/全屏/通知）
+         └─ viewer.html           # 自包含观众页（视频/音频/电平条/统计/截图/全屏/通知）
 ```
 
 ## 📖 常见开发指南

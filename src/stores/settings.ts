@@ -17,6 +17,9 @@ export const settings = reactive({
   fps: 30,
   audio: true,
   showCursor: true,
+  micEnabled: false,
+  micDevice: "",
+  micVolume: 100,
   autoStart: false,
   serverAutoStart: true,
 });
@@ -31,6 +34,9 @@ export function clampQuality(q: number): number {
 export function clampFps(fps: number): number {
   return Math.min(60, Math.max(5, Math.round(fps)));
 }
+export function clampMicVolume(v: number): number {
+  return Math.min(200, Math.max(0, Math.round(v)));
+}
 
 function normalize(cfg: Partial<typeof settings>): void {
   settings.language = normalizeLangOption(cfg.language);
@@ -41,6 +47,12 @@ function normalize(cfg: Partial<typeof settings>): void {
   settings.audio = cfg.audio !== false;
   // Only an explicit false hides the mouse cursor from viewers.
   settings.showCursor = cfg.showCursor !== false;
+  // Mic is session-only: it always starts OFF each launch (privacy default);
+  // only the device and volume are remembered.
+  settings.micEnabled = false;
+  settings.micDevice = typeof cfg.micDevice === "string" ? cfg.micDevice : "";
+  const micVol = Number(cfg.micVolume);
+  settings.micVolume = Number.isFinite(micVol) ? clampMicVolume(micVol) : 100;
   // Opt-in: only an explicit true enables auto-start sharing.
   settings.autoStart = cfg.autoStart === true;
   settings.serverAutoStart = cfg.serverAutoStart !== false;
@@ -66,6 +78,8 @@ export async function persistSettings(): Promise<void> {
       fps: settings.fps,
       audio: settings.audio,
       showCursor: settings.showCursor,
+      micDevice: settings.micDevice,
+      micVolume: settings.micVolume,
       autoStart: settings.autoStart,
       serverAutoStart: settings.serverAutoStart,
     });
@@ -83,6 +97,20 @@ export async function applyShareParams(): Promise<void> {
       settings.fps,
       settings.audio,
       settings.showCursor,
+    );
+  } catch {
+    // Outside Tauri — nothing to apply.
+  }
+}
+
+/** Push mic settings (enable/device/volume) to the backend capture thread. */
+export async function applyMicParams(): Promise<void> {
+  if (!settings.loaded) return;
+  try {
+    await api.updateMicParams(
+      settings.micEnabled,
+      settings.micDevice,
+      settings.micVolume,
     );
   } catch {
     // Outside Tauri — nothing to apply.

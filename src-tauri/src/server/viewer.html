@@ -145,6 +145,36 @@
   }
   button { font-family: inherit; }
 
+  /* ---------- audio level meter ---------- */
+  .level {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px;
+  }
+  /* the class display above would beat the UA [hidden] rule otherwise */
+  .level[hidden] { display: none; }
+  .level-track {
+    width: 64px;
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .level-fill {
+    display: block;
+    height: 100%;
+    width: 0%;
+    border-radius: 4px;
+    /* green -> yellow -> red; clipping by width keeps quiet levels green */
+    background: linear-gradient(90deg, #18a058 0%, #63c231 40%, #f0a020 70%, #d03050 100%);
+  }
+  .level-db {
+    padding: 0;
+    color: var(--text-dim);
+  }
+
   /* ---------- toasts ---------- */
   #toasts {
     position: absolute;
@@ -183,6 +213,7 @@
     .brand span { display: none; }
     #volume { width: 70px; }
     .stat.opt { display: none; }
+    .level-track { width: 46px; }
   }
 </style>
 </head>
@@ -218,6 +249,11 @@
       <div class="sep"></div>
       <button class="tbtn off" id="btn-mute" title="声音"></button>
       <input type="range" id="volume" min="0" max="100" value="80" />
+      <button class="tbtn" id="btn-level" title="声音电平"></button>
+      <span class="level" id="audio-level" hidden>
+        <span class="level-track"><span class="level-fill" id="level-fill"></span></span>
+        <span class="stat opt level-db" id="level-db">— dB</span>
+      </span>
       <div class="sep"></div>
       <button class="tbtn" id="btn-shot" title="截图"></button>
       <button class="tbtn" id="btn-fs" title="全屏"></button>
@@ -244,6 +280,8 @@
       saved: "截图已保存",
       shotFail: "截图失败",
       display: "显示器",
+      levelShow: "显示声音电平",
+      levelHide: "隐藏声音电平",
     },
     en: {
       waiting: "Waiting for the host to start sharing…",
@@ -257,6 +295,8 @@
       saved: "Screenshot saved",
       shotFail: "Screenshot failed",
       display: "Display",
+      levelShow: "Show audio level",
+      levelHide: "Hide audio level",
     },
   };
 
@@ -271,6 +311,7 @@
   var ICONS = {
     speaker: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9.5v5h3.1l4.6 3.9V5.6L7.6 9.5H4.5z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/></svg>',
     muted: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9.5v5h3.1l4.6 3.9V5.6L7.6 9.5H4.5z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
+    level: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4.5 12.5v5M12 5.5v12M19.5 9v8.5"/></svg>',
     camera: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.2c0-1 .8-1.8 1.8-1.8h1.9l1.4-1.9h6.8l1.4 1.9h1.9c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H5.8c-1 0-1.8-.8-1.8-1.8z"/><circle cx="12" cy="12.2" r="3.4"/></svg>',
     expand: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   };
@@ -409,7 +450,14 @@
     if (n === 0) return;
     var buf = audioCtx.createBuffer(1, n, 48000);
     var ch = buf.getChannelData(0);
-    for (var i = 0; i < n; i++) ch[i] = samples[i] / 32768;
+    var sum2 = 0;
+    for (var i = 0; i < n; i++) {
+      var s = samples[i] / 32768;
+      sum2 += s * s;
+      ch[i] = s;
+    }
+    lastAudioAt = Date.now(); // frames arrive; updated even with the meter off
+    updateLevel(sum2 / n);
     var src = audioCtx.createBufferSource();
     src.buffer = buf;
     src.connect(gainNode);
@@ -419,6 +467,66 @@
     src.start(nextAt);
     nextAt += buf.duration;
   }
+
+  // ---------- audio level meter ----------
+  // Shows what the host is actually sending: RMS dBFS of the received PCM
+  // (independent of the viewer's own mute/volume). Attack is instant,
+  // release decays a few dB per tick; the meter hides after the audio
+  // stream goes quiet (no frames for a while, e.g. host stopped sharing).
+  // The bar button toggles visibility entirely; the choice persists in
+  // localStorage as a per-viewer preference.
+  var levelWrap = $("audio-level"), levelFill = $("level-fill"), levelDb = $("level-db");
+  var curDb = -60, lastAudioAt = 0;
+  var LEVEL_IDLE_MS = 500;
+  var LEVEL_PREF_KEY = "hiscreen-level-meter";
+  var levelOn = localStorage.getItem(LEVEL_PREF_KEY) !== "0"; // default: on
+
+  var btnLevel = $("btn-level");
+  function renderLevelBtn() {
+    btnLevel.innerHTML = ICONS.level;
+    btnLevel.classList.toggle("off", !levelOn);
+    btnLevel.title = levelOn ? I18N[LANG].levelHide : I18N[LANG].levelShow;
+  }
+  btnLevel.addEventListener("click", function () {
+    levelOn = !levelOn;
+    try { localStorage.setItem(LEVEL_PREF_KEY, levelOn ? "1" : "0"); } catch (e) {}
+    renderLevelBtn();
+    if (!levelOn) {
+      levelWrap.hidden = true; // hide immediately, stop all updates
+    } else if (Date.now() - lastAudioAt < LEVEL_IDLE_MS) {
+      levelWrap.hidden = false; // audio still flowing — show right away
+      renderLevel();
+    }
+  });
+  renderLevelBtn();
+  if (!levelOn) levelWrap.hidden = true;
+
+  function updateLevel(mean2) {
+    if (!levelOn) return;
+    var rms = Math.sqrt(mean2);
+    var db = 20 * Math.log10(rms); // log10(0) = -Infinity, clamped below
+    curDb = Math.max(-60, Math.min(0, db));
+    if (levelWrap.hidden) levelWrap.hidden = false;
+    renderLevel();
+  }
+  function renderLevel() {
+    var pct = Math.min(100, Math.max(0, Math.round((curDb + 60) * (100 / 60))));
+    levelFill.style.width = pct + "%";
+    levelDb.textContent = Math.round(curDb) + " dB";
+  }
+  setInterval(function () {
+    if (levelWrap.hidden) return;
+    if (Date.now() - lastAudioAt > LEVEL_IDLE_MS) {
+      curDb = -60;
+      levelWrap.hidden = true;
+      levelFill.style.width = "0%";
+      return;
+    }
+    if (curDb > -60) {
+      curDb = Math.max(-60, curDb - 3); // release decay
+      renderLevel();
+    }
+  }, 50);
 
   // ---------- toolbar ----------
   var btnMute = $("btn-mute"), volumeEl = $("volume");

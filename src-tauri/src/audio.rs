@@ -1,17 +1,21 @@
-//! System-audio capture feeding the hub's audio broadcast channel.
+//! System-audio and microphone capture feeding the hub's audio broadcast
+//! channel.
 //!
 //! Output contract (both platforms): mono samples pushed through
-//! [`AudioFeed`], which resamples to 48 kHz, converts to i16 and emits
-//! 20 ms chunks (960 samples) as binary frames (type byte + payload).
+//! [`AudioFeed`], which resamples to 48 kHz and routes finished 20 ms chunks
+//! (960 samples) either straight to the broadcast channel (legacy
+//! single-source path, used while mic mixing is off) or into [`AudioBus`]
+//! where the mixer pacer sums system + mic audio before broadcasting.
 //!
-//! - Windows: WASAPI loopback of the default render device (system audio).
-//! - macOS / Linux: cpal default input device; on Linux a PulseAudio/PipeWire
-//!   ".monitor" source is preferred when present, otherwise the microphone.
+//! - System audio, Windows: WASAPI loopback of the default render device.
+//! - System audio, macOS / Linux: cpal default input device; on Linux a
+//!   PulseAudio/PipeWire ".monitor" source is preferred, otherwise the mic.
+//! - Microphone (all platforms): cpal input device, see [`crate::mic`].
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::hub::{Hub, LogLevel, FRAME_AUDIO};
 
@@ -36,28 +40,41 @@ impl Drop for AudioHandle {
     }
 }
 
-/// Resamples any input rate down/up to 48 kHz mono and emits fixed-size
-/// i16 chunks on the hub's audio channel (gated by the audio_on flag).
-struct AudioFeed {
+/// Which source a feed captures; decides where finished chunks are routed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FeedKind {
+    /// System audio (loopback / monitor). Routes to the mixer bus while mic
+    /// mixing is on, otherwise broadcasts directly (legacy path).
+    System,
+    /// Microphone. Always feeds the mixer bus and drives the level meter.
+    Mic,
+}
+
+/// Resamples any input rate down/up to 48 kHz mono and routes fixed-size
+/// chunks according to [`FeedKind`].
+pub(crate) struct AudioFeed {
     hub: Arc<Hub>,
+    kind: FeedKind,
     src_rate: f64,
     buf: Vec<f64>,
     buf_pos: f64,
-    out: Vec<i16>,
+    /// Resampled 48 kHz mono samples, emitted one 20 ms chunk at a time.
+    chunk: Vec<f32>,
 }
 
 impl AudioFeed {
-    fn new(hub: Arc<Hub>) -> Self {
+    pub(crate) fn new(hub: Arc<Hub>, kind: FeedKind) -> Self {
         Self {
             hub,
+            kind,
             src_rate: DST_RATE,
             buf: Vec::new(),
             buf_pos: 0.0,
-            out: Vec::with_capacity(CHUNK * 2),
+            chunk: Vec::with_capacity(CHUNK),
         }
     }
 
-    fn push(&mut self, samples: &[f32], rate: u32) {
+    pub(crate) fn push(&mut self, samples: &[f32], rate: u32) {
         if samples.is_empty() {
             return;
         }
@@ -74,10 +91,10 @@ impl AudioFeed {
             let i = pos as usize;
             let frac = pos - i as f64;
             let s = self.buf[i] + (self.buf[i + 1] - self.buf[i]) * frac;
-            self.out.push(((s.clamp(-1.0, 1.0)) * 32767.0) as i16);
+            self.chunk.push(s.clamp(-1.0, 1.0) as f32);
             pos += ratio;
-            if self.out.len() >= CHUNK {
-                self.flush();
+            if self.chunk.len() >= CHUNK {
+                self.emit();
             }
         }
         // Drop consumed input samples, keep the fractional position aligned.
@@ -86,25 +103,108 @@ impl AudioFeed {
         self.buf_pos = pos - consumed as f64;
     }
 
-    fn flush(&mut self) {
-        if self.out.len() < CHUNK {
+    fn emit(&mut self) {
+        match self.kind {
+            FeedKind::Mic => self.emit_mic(),
+            FeedKind::System => self.emit_system(),
+        }
+        self.chunk.clear();
+    }
+
+    /// System-audio chunk: into the mixer bus while mic mixing is on, else
+    /// broadcast directly (the legacy single-source path, unchanged).
+    fn emit_system(&mut self) {
+        if self.hub.mic_on.load(Ordering::Relaxed) {
+            self.hub.audio_bus.push_system(&self.chunk);
             return;
         }
         if !self.hub.audio_on.load(Ordering::Relaxed) {
-            self.out.clear();
             return;
         }
         let mut msg = Vec::with_capacity(CHUNK * 2 + 1);
         msg.push(FRAME_AUDIO);
-        for s in self.out.drain(..CHUNK) {
-            msg.extend_from_slice(&s.to_le_bytes());
+        for s in &self.chunk {
+            msg.extend_from_slice(&((s * 32767.0) as i16).to_le_bytes());
         }
         let _ = self.hub.audio.send(Arc::from(msg));
+    }
+
+    /// Mic chunk: apply the UI volume, update the dB meter, feed the bus.
+    fn emit_mic(&mut self) {
+        let gain = self.hub.mic_gain_pct.load(Ordering::Relaxed) as f32 / 100.0;
+        let mut sum2 = 0.0f32;
+        for s in &mut self.chunk {
+            *s = (*s * gain).clamp(-1.0, 1.0);
+            sum2 += *s * *s;
+        }
+        let rms = (sum2 / self.chunk.len().max(1) as f32).sqrt();
+        // log10(0) is -inf, clamped to the -90 dB meter floor.
+        let db = (20.0 * rms.log10()).clamp(-90.0, 0.0);
+        self.hub
+            .mic_level_db10
+            .store((db * 10.0).round() as i32, Ordering::Relaxed);
+        self.hub.audio_bus.push_mic(&self.chunk);
+    }
+}
+
+/// Sample queues feeding the mixer pacer ([`start_mixer`]). Capture threads
+/// push resampled 48 kHz mono chunks here while mic mixing is active.
+#[derive(Default)]
+pub struct AudioBus {
+    system: Mutex<Vec<f32>>,
+    mic: Mutex<Vec<f32>>,
+}
+
+impl AudioBus {
+    /// ~100 ms of samples per source; older samples are dropped so a device
+    /// clock slightly faster than the pacer cannot build unbounded latency.
+    const CAP: usize = 4800;
+
+    pub fn push_system(&self, chunk: &[f32]) {
+        Self::push(&self.system, chunk);
+    }
+
+    pub fn push_mic(&self, chunk: &[f32]) {
+        Self::push(&self.mic, chunk);
+    }
+
+    fn push(q: &Mutex<Vec<f32>>, chunk: &[f32]) {
+        let mut q = q.lock().unwrap();
+        q.extend_from_slice(chunk);
+        let excess = q.len().saturating_sub(Self::CAP);
+        if excess > 0 {
+            q.drain(..excess);
+        }
+    }
+
+    fn drain(q: &Mutex<Vec<f32>>, cap: usize) -> Vec<f32> {
+        let mut q = q.lock().unwrap();
+        let n = q.len().min(cap);
+        q.drain(..n).collect()
+    }
+
+    pub fn drain_system(&self, cap: usize) -> Vec<f32> {
+        Self::drain(&self.system, cap)
+    }
+
+    pub fn drain_mic(&self, cap: usize) -> Vec<f32> {
+        Self::drain(&self.mic, cap)
+    }
+
+    /// Discard everything (used when no share session is running so queues
+    /// can't hold stale samples).
+    pub fn clear(&self) {
+        self.system.lock().unwrap().clear();
+        self.mic.lock().unwrap().clear();
     }
 }
 
 /// Average all channels down to mono (expecting interleaved frames).
-fn downmix<'a, T: Copy, F: Fn(T) -> f32>(data: &'a [T], channels: usize, to_f32: F) -> Vec<f32> {
+pub(crate) fn downmix<'a, T: Copy, F: Fn(T) -> f32>(
+    data: &'a [T],
+    channels: usize,
+    to_f32: F,
+) -> Vec<f32> {
     let channels = channels.max(1);
     let frames = data.len() / channels;
     let mut out = Vec::with_capacity(frames);
@@ -135,6 +235,62 @@ pub fn start(hub: Arc<Hub>) -> AudioHandle {
         stop,
         thread: Some(thread),
     }
+}
+
+/// Spawn the 20 ms mixer pacer. It lives for the whole app run and idles
+/// (a sleeping loop) while mic mixing is off — the legacy single-source path
+/// broadcasts straight from its capture thread instead. While mic mixing is
+/// on it sums the pending system + mic samples into one output chunk every
+/// tick; system audio keeps its mute gate (`audio_on`), mic keeps its gain.
+pub fn start_mixer(hub: Arc<Hub>) {
+    thread::Builder::new()
+        .name("hiscreen-mix".into())
+        .spawn(move || {
+            let mut next = Instant::now();
+            loop {
+                next += Duration::from_millis(20);
+                let now = Instant::now();
+                if next > now {
+                    thread::sleep(next - now);
+                } else {
+                    next = now; // fell behind: resync instead of bursting
+                }
+                mix_tick(&hub);
+            }
+        })
+        .expect("spawn mixer thread");
+}
+
+fn mix_tick(hub: &Hub) {
+    if !hub.mic_on.load(Ordering::Relaxed) {
+        return;
+    }
+    // Mic capture also runs for the host's level meter while idle; only
+    // broadcast to viewers during an active share session.
+    if !hub.share.lock().unwrap().sharing {
+        hub.audio_bus.clear();
+        return;
+    }
+    let audio_on = hub.audio_on.load(Ordering::Relaxed);
+    let sys = if audio_on {
+        hub.audio_bus.drain_system(CHUNK)
+    } else {
+        hub.audio_bus.drain_system(usize::MAX); // muted: drop the backlog
+        Vec::new()
+    };
+    let mic = hub.audio_bus.drain_mic(CHUNK);
+    if sys.is_empty() && mic.is_empty() {
+        return;
+    }
+    let mut msg = Vec::with_capacity(CHUNK * 2 + 1);
+    msg.push(FRAME_AUDIO);
+    for i in 0..CHUNK {
+        let a = sys.get(i).copied().unwrap_or(0.0);
+        let b = mic.get(i).copied().unwrap_or(0.0);
+        let s = (a + b).clamp(-1.0, 1.0);
+        msg.extend_from_slice(&((s * 32767.0) as i16).to_le_bytes());
+    }
+    let _ = hub.audio.send(Arc::from(msg));
 }
 
 // ---------------------------------------------------------------- Windows
@@ -251,7 +407,7 @@ unsafe fn wasapi_loopback(hub: &Arc<Hub>, stop: &AtomicBool) -> Result<(), Strin
         format!("音频设备已连接（系统声音 {rate}Hz/{channels}ch/{bits}bit）"),
     );
 
-    let mut feed = AudioFeed::new(hub.clone());
+    let mut feed = AudioFeed::new(hub.clone(), FeedKind::System);
     loop {
         if stop.load(Ordering::Relaxed) {
             let _ = client.Stop();
@@ -368,7 +524,7 @@ fn run_unix(hub: Arc<Hub>, stop: Arc<AtomicBool>) {
         format!("音频设备已连接（{source_kind} {rate}Hz/{channels}ch）"),
     );
 
-    let mut feed = AudioFeed::new(hub.clone());
+    let mut feed = AudioFeed::new(hub.clone(), FeedKind::System);
     while !stop.load(Ordering::Relaxed) {
         match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(samples) => feed.push(&samples, rate),
