@@ -44,7 +44,7 @@ pub fn run() {
                 config: std::sync::Mutex::new(cfg.clone()),
             });
 
-            let hub = Arc::new(Hub::new(cfg.fps, cfg.quality, cfg.audio, cfg.show_cursor));
+            let hub = Arc::new(Hub::new(cfg.fps, cfg.quality, cfg.audio, cfg.showCursor));
             app.manage(MediaState {
                 hub: hub.clone(),
                 server: std::sync::Mutex::new(ServerHandle::offline()),
@@ -57,7 +57,7 @@ pub fn run() {
 
             // Bring the HTTP/WS server up before the window shows so the
             // viewer URL works right away (bind failure is non-fatal).
-            if cfg.server_auto_start {
+            if cfg.serverAutoStart {
                 match server::start(hub.clone(), cfg.port) {
                     Ok(handle) => {
                         let addr = handle

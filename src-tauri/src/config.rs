@@ -5,8 +5,10 @@ use tauri::Manager;
 
 /// Application settings persisted to `{app_data_dir}/config.json`.
 /// Field values mirror what the frontend stores, so both sides agree.
+/// JSON uses camelCase (what the frontend sends); snake_case aliases keep
+/// older config files written before the rename readable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
     /// system | zh-CN | en-US
     pub language: String,
@@ -21,11 +23,14 @@ pub struct AppConfig {
     /// Whether system audio is captured and streamed
     pub audio: bool,
     /// Whether the mouse cursor is composited into the shared video
-    pub show_cursor: bool,
+    #[serde(alias = "show_cursor")]
+    pub showCursor: bool,
     /// Start sharing the primary display when the app launches
-    pub auto_start: bool,
+    #[serde(alias = "auto_start")]
+    pub autoStart: bool,
     /// Start the HTTP/WS server when the app launches
-    pub server_auto_start: bool,
+    #[serde(alias = "server_auto_start")]
+    pub serverAutoStart: bool,
 }
 
 impl Default for AppConfig {
@@ -38,11 +43,11 @@ impl Default for AppConfig {
             fps: 30,
             audio: true,
             // Viewers normally expect to see the host mouse pointer.
-            show_cursor: true,
+            showCursor: true,
             // Sharing spawns the capture/encode threads; keep it opt-in so
             // the first launch stays instant.
-            auto_start: false,
-            server_auto_start: true,
+            autoStart: false,
+            serverAutoStart: true,
         }
     }
 }
