@@ -262,12 +262,14 @@ fn stop_threads(state: &MediaState) {
 }
 
 #[tauri::command]
-pub fn broadcast_notice(state: State<MediaState>, text: String) {
+pub fn broadcast_notice(state: State<MediaState>, text: String, duration_secs: u64) {
     let text = text.trim().to_string();
     if text.is_empty() {
         return;
     }
-    state.hub.broadcast_notice(&text);
+    // Clamp to a sane banner lifetime (the UI offers 5s..60min).
+    let duration = duration_secs.clamp(1, 3600);
+    state.hub.broadcast_notice(&text, duration);
 }
 
 #[tauri::command]

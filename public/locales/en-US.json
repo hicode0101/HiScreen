@@ -7,11 +7,16 @@
     "audience": "Viewers",
     "network": "Network",
     "quality": "Audio and Quality",
-    "log": "Log"
+    "log": "Log",
+    "about": "About"
   },
   "share": {
     "title": "Start Sharing",
     "source": "Source",
+    "refreshSources": "Refresh display list",
+    "sourcesRefreshed": "Display list refreshed",
+    "refreshFailed": "Failed to refresh display list",
+    "browserHint": "Browser debug mode: source refresh is unavailable",
     "resolution": "Resolution",
     "fps": "Frame rate",
     "idle": "Idle",
@@ -45,6 +50,8 @@
     "kicked": "Viewer disconnected",
     "kickFailed": "Failed to disconnect",
     "noticePlaceholder": "Send a broadcast notice",
+    "durSec": "{n} s",
+    "durMin": "{n} min",
     "send": "Send",
     "noticeSent": "Notice sent",
     "noticeFailed": "Failed to send notice",
@@ -67,7 +74,6 @@
     "videoQuality": "Video quality",
     "targetFps": "Target FPS",
     "shareAudio": "Share system audio",
-    "autoStart": "Start sharing automatically",
     "videoSection": "Video and Audio",
     "deviceSection": "Device Status",
     "audioStatus": "Audio",
@@ -89,7 +95,6 @@
     "author": "Author: "
   },
   "settings": {
-    "close": "Close",
     "theme": "Theme",
     "themeHint": "Choose the app theme, applied immediately",
     "light": "Light mode",
@@ -101,6 +106,6 @@
   "status": {
     "serverOn": "Server running",
     "serverOff": "Server stopped",
-    "viewers": "Viewers {n}"
+    "viewers": "{n} viewers"
   }
 }

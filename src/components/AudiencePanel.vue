@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { NButton, useMessage } from "naive-ui";
+import { NButton, NSelect, useMessage } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { api, isTauri } from "@/lib/tauri";
 import { share } from "@/stores/share";
@@ -16,7 +16,17 @@ const { t } = useI18n();
 const message = useMessage();
 
 const notice = ref("");
+const noticeDuration = ref(10);
 const viewers = computed(() => share.status.viewers ?? []);
+
+const durationOptions = [
+  { label: () => t("audience.durSec", { n: 5 }), value: 5 },
+  { label: () => t("audience.durSec", { n: 10 }), value: 10 },
+  { label: () => t("audience.durMin", { n: 1 }), value: 60 },
+  { label: () => t("audience.durMin", { n: 10 }), value: 600 },
+  { label: () => t("audience.durMin", { n: 30 }), value: 1800 },
+  { label: () => t("audience.durMin", { n: 60 }), value: 3600 },
+];
 
 function formatFor(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -35,7 +45,7 @@ async function sendNotice(): Promise<void> {
     return;
   }
   try {
-    await api.broadcastNotice(text);
+    await api.broadcastNotice(text, noticeDuration.value);
     message.success(t("audience.noticeSent"));
     notice.value = "";
   } catch {
@@ -117,6 +127,13 @@ async function kick(id: number): Promise<void> {
         type="text"
         :placeholder="t('audience.noticePlaceholder')"
         @keydown.enter="void sendNotice()"
+      />
+      <NSelect
+        class="notice-duration"
+        size="small"
+        :value="noticeDuration"
+        :options="durationOptions"
+        @update:value="(v: number) => (noticeDuration = v)"
       />
       <NButton type="primary" size="small" @click="void sendNotice()">
         {{ t("audience.send") }}
@@ -288,5 +305,10 @@ async function kick(id: number): Promise<void> {
 
 .notice-input::placeholder {
   color: var(--text-tertiary);
+}
+
+.notice-duration {
+  width: 108px;
+  flex-shrink: 0;
 }
 </style>

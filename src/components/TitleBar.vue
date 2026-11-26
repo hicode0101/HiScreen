@@ -3,7 +3,6 @@ import { onMounted, onUnmounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "vue-i18n";
 import { isTauri } from "@/lib/tauri";
-import { ui } from "@/stores/ui";
 import Icon from "./Icon.vue";
 
 const { t } = useI18n();
@@ -48,14 +47,6 @@ function close(): void {
     </div>
 
     <div class="tb-actions">
-      <button
-        class="tb-btn"
-        :aria-label="t('about.title')"
-        :title="t('about.title')"
-        @click="ui.aboutOpen = true"
-      >
-        <Icon name="info" :size="16" />
-      </button>
       <div class="caption-group">
         <button class="tb-btn caption" @click="minimize">
           <Icon name="minimize" :size="14" />

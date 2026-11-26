@@ -63,11 +63,20 @@ export function disposeShare(): void {
   stopPreviewLoop();
 }
 
-export async function refreshDisplays(): Promise<void> {
+/**
+ * Re-enumerate displays. Resolves `true` when the backend list was fetched
+ * and `false` when unavailable (no Tauri / IPC error — the mock list is
+ * applied so the layout keeps working), letting UI callers report success.
+ */
+export async function refreshDisplays(): Promise<boolean> {
   if (isTauri()) {
     try {
       share.displays = await api.listDisplays();
-      return;
+      // A display may have been unplugged since the last enumeration.
+      if (share.selected >= share.displays.length) {
+        share.selected = 0;
+      }
+      return true;
     } catch {
       // fall through to the mock below
     }
@@ -76,6 +85,7 @@ export async function refreshDisplays(): Promise<void> {
   share.displays = [
     { id: 0, name: "Display 1", width: 1920, height: 1080, primary: true },
   ];
+  return false;
 }
 
 /**

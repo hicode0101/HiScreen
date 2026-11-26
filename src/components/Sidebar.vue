@@ -11,6 +11,7 @@ const items: { id: ViewId; icon: string; key: string }[] = [
   { id: "network", icon: "lan", key: "nav.network" },
   { id: "quality", icon: "speaker", key: "nav.quality" },
   { id: "log", icon: "log", key: "nav.log" },
+  { id: "about", icon: "info", key: "nav.about" },
 ];
 </script>
 

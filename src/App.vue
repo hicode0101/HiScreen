@@ -19,8 +19,8 @@ import AudienceView from "@/components/AudienceView.vue";
 import NetworkView from "@/components/NetworkView.vue";
 import QualityView from "@/components/QualityView.vue";
 import LogView from "@/components/LogView.vue";
+import AboutView from "@/components/AboutView.vue";
 import StatusBar from "@/components/StatusBar.vue";
-import AboutDialog from "@/components/AboutDialog.vue";
 import { ui } from "@/stores/ui";
 import { initShare, disposeShare } from "@/stores/share";
 
@@ -61,12 +61,12 @@ if (import.meta.hot) {
             <AudienceView v-else-if="ui.view === 'audience'" />
             <NetworkView v-else-if="ui.view === 'network'" />
             <QualityView v-else-if="ui.view === 'quality'" />
-            <LogView v-else />
+            <LogView v-else-if="ui.view === 'log'" />
+            <AboutView v-else />
           </main>
         </div>
         <StatusBar />
       </div>
-      <AboutDialog />
     </NMessageProvider>
   </NConfigProvider>
 </template>

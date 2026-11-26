@@ -156,10 +156,15 @@ impl Hub {
     }
 
     /// Send a text notice to every viewer (and log it locally).
-    pub fn broadcast_notice(&self, text: &str) {
-        let json = serde_json::json!({ "type": "notice", "text": text });
+    /// `duration_secs` is how long viewers keep the banner on screen.
+    pub fn broadcast_notice(&self, text: &str, duration_secs: u64) {
+        let json = serde_json::json!({
+            "type": "notice",
+            "text": text,
+            "duration": duration_secs,
+        });
         self.push_control(json.to_string());
-        self.log(LogLevel::Info, format!("广播通知: {text}"));
+        self.log(LogLevel::Info, format!("广播通知({duration_secs}s): {text}"));
     }
 
     /// Serialize the current meta object (used as the first WS message).

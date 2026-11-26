@@ -12,8 +12,7 @@ import {
 
 /**
  * Shared audio & quality controls (video quality slider, target fps select,
- * audio toggle, auto-start toggle) used on both the share page and the
- * dedicated quality page.
+ * audio toggle) used by the dedicated quality page.
  */
 const { t } = useI18n();
 
@@ -47,11 +46,6 @@ function onAudio(value: boolean): void {
   settings.audio = value;
   void persistSettings();
   void applyShareParams();
-}
-
-function onAutoStart(value: boolean): void {
-  settings.autoStart = value;
-  void persistSettings();
 }
 
 onBeforeUnmount(() => {
@@ -94,14 +88,6 @@ onBeforeUnmount(() => {
           @update:value="onAudio"
         />
         <span>{{ t("quality.shareAudio") }}</span>
-      </label>
-      <label class="toggle-item">
-        <NSwitch
-          size="small"
-          :value="settings.autoStart"
-          @update:value="onAutoStart"
-        />
-        <span>{{ t("quality.autoStart") }}</span>
       </label>
     </div>
   </div>

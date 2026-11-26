@@ -15,6 +15,20 @@
 
 </div>
 
+<div align="center">
+
+## 界面预览
+
+**主机端**（选择显示器 · 实时预览 · 地址 / 二维码）
+
+![主机端界面](docs/screenshots/HiScreen-1.png)
+
+**观众端**（浏览器打开 `http://主机IP:7870` 即看，无需安装客户端）
+
+![观众端界面](docs/screenshots/HiScreen-2.png)
+
+</div>
+
 ---
 
 ## 简介
@@ -36,7 +50,7 @@ HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择�
 **观众管理**
 
 - 👥 **实时观众列表**：设备系统 / 浏览器 / 延迟（RTT）/ 已连接时长 / 音频开关状态
-- 📢 **广播通知**：主机发送文字通知，所有观众页弹横幅提示
+- 📢 **广播通知**：主机发送文字通知，所有观众页弹横幅提示，可指定停留时长（5 秒 ~ 60 分钟）
 - ⛔ **断开观众**：单独踢除任意观众连接
 
 **网络与运维**
@@ -137,7 +151,7 @@ HiScreen/
 │     └─ en-US.json
 ├─ src/
 │  ├─ main.ts                     # 引导：加载设置 → 应用主题 → 加载语言 → 挂载
-│  ├─ App.vue                     # NConfigProvider 接线 + 标题栏/侧边栏/五视图/状态栏骨架
+│  ├─ App.vue                     # NConfigProvider 接线 + 标题栏/侧边栏/六视图/状态栏骨架
 │  ├─ components/
 │  │  ├─ TitleBar.vue             # 自绘标题栏
 │  │  ├─ Sidebar.vue              # 左侧导航（开始分享/观众/网络/音频质量/日志）
@@ -146,10 +160,10 @@ HiScreen/
 │  │  ├─ AudiencePanel.vue        # 观众表格 + 广播通知（share 页与观众页共用）
 │  │  ├─ NetworkView.vue          # 网络设置（端口/地址列表/防火墙手工放行指引）
 │  │  ├─ QualityView.vue          # 音频与质量全页
-│  │  ├─ QualityControls.vue      # 质量/帧率/音频/自动分享控件（音频与质量页）
+│  │  ├─ QualityControls.vue      # 质量/帧率/音频控件（音频与质量页）
 │  │  ├─ LogView.vue              # 事件日志
 │  │  ├─ StatusBar.vue            # 状态栏（服务状态/观众数/版本号）
-│  │  ├─ AboutDialog.vue          # 关于弹窗（版本信息 + 主题/语言切换，标题栏 ℹ 按钮打开）
+│  │  ├─ AboutView.vue           # 关于页（版本信息 + 主题/语言切换，侧边栏「关于」进入）
 │  │  ├─ DialogCard.vue           # 弹窗统一基础组件（继承脚手架）
 │  │  └─ Icon.vue                 # 行内 SVG 图标组件
 │  ├─ lib/
@@ -179,7 +193,7 @@ HiScreen/
 
 ## 📖 常见开发指南
 
-**新增一种语言**：① 在 `public/locales/` 新增 JSON（结构照抄 `zh-CN.json`）→ ② `src/lib/i18n.ts` 的 `LANGUAGE_PREFERENCES` 追加 locale → ③ `AboutDialog.vue` 的 `languageOptions` 追加选项。
+**新增一种语言**：① 在 `public/locales/` 新增 JSON（结构照抄 `zh-CN.json`）→ ② `src/lib/i18n.ts` 的 `LANGUAGE_PREFERENCES` 追加 locale → ③ `AboutView.vue` 的 `languageOptions` 追加选项。
 
 **新增 Tauri 命令（IPC）**：① `src-tauri/src/commands/mod.rs` 写 `#[tauri::command]` → ② `lib.rs` 的 `invoke_handler!` 注册 → ③ `src/lib/tauri.ts` 的 `api` 对象封装，组件内调用。
 

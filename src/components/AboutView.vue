@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { NButton, NSelect } from "naive-ui";
+import { NSelect } from "naive-ui";
 import { useI18n } from "vue-i18n";
-import { ui } from "@/stores/ui";
 import { api, openExternal } from "@/lib/tauri";
 import { APP_AUTHOR, APP_HOMEPAGE } from "@/lib/appInfo";
 import { settings, updateLanguage, updateTheme } from "@/stores/settings";
 import type { LangOption } from "@/lib/i18n";
 import type { ThemeOption } from "@/lib/theme";
-import DialogCard from "./DialogCard.vue";
 import Icon from "./Icon.vue";
 
 const { t } = useI18n();
@@ -47,34 +45,31 @@ function openHomepage(): void {
 </script>
 
 <template>
-  <DialogCard
-    v-model:open="ui.aboutOpen"
-    :title="t('about.title')"
-    :aria-label="t('about.title')"
-    :close-label="t('settings.close')"
-    :draggable="false"
-    :resizable="false"
-  >
-    <div class="about-body">
-      <svg class="about-logo" viewBox="0 0 24 24" width="76" height="76" aria-hidden="true">
-        <rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="var(--accent)" />
-        <rect x="5" y="5.5" width="14" height="9.5" rx="1.6" stroke="var(--accent-text)" stroke-width="1.7" fill="none" stroke-linejoin="round" />
-        <path d="M10.3 8.1 14.2 10.25 10.3 12.4z" fill="var(--accent-text)" stroke="var(--accent-text)" stroke-width="0.8" stroke-linejoin="round" />
-        <path d="M9.5 18.6h5M12 15v3.6" stroke="var(--accent-text)" stroke-width="1.7" fill="none" stroke-linecap="round" />
-      </svg>
+  <div class="about-view">
+    <h2 class="view-title">{{ t("about.title") }}</h2>
 
-      <div class="about-name">{{ t("app.name") }}</div>
-      <div class="about-version">{{ version ? `v${version}` : "-" }}</div>
-      <p class="about-desc">{{ t("about.desc") }}</p>
+    <section class="card about-card">
+      <div class="about-head">
+        <svg class="about-logo" viewBox="0 0 24 24" width="64" height="64" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="var(--accent)" />
+          <rect x="5" y="5.5" width="14" height="9.5" rx="1.6" stroke="var(--accent-text)" stroke-width="1.7" fill="none" stroke-linejoin="round" />
+          <path d="M10.3 8.1 14.2 10.25 10.3 12.4z" fill="var(--accent-text)" stroke="var(--accent-text)" stroke-width="0.8" stroke-linejoin="round" />
+          <path d="M9.5 18.6h5M12 15v3.6" stroke="var(--accent-text)" stroke-width="1.7" fill="none" stroke-linecap="round" />
+        </svg>
 
-      <div class="about-meta">
-        <div class="about-row">
-          <span class="about-label">{{ t("about.homepage") }}</span>
-          <a href="#" class="about-link" @click.prevent="openHomepage">{{ APP_HOMEPAGE }}</a>
-        </div>
-        <div class="about-row">
-          <span class="about-label">{{ t("about.author") }}</span>
-          <span>{{ APP_AUTHOR }}</span>
+        <div class="about-name">{{ t("app.name") }}</div>
+        <div class="about-version">{{ version ? `v${version}` : "-" }}</div>
+        <p class="about-desc">{{ t("about.desc") }}</p>
+
+        <div class="about-meta">
+          <div class="about-row">
+            <span class="about-label">{{ t("about.homepage") }}</span>
+            <a href="#" class="about-link" @click.prevent="openHomepage">{{ APP_HOMEPAGE }}</a>
+          </div>
+          <div class="about-row">
+            <span class="about-label">{{ t("about.author") }}</span>
+            <span>{{ APP_AUTHOR }}</span>
+          </div>
         </div>
       </div>
 
@@ -110,38 +105,46 @@ function openHomepage(): void {
           />
         </div>
       </div>
-    </div>
-
-    <template #footer>
-      <NButton type="primary" @click="ui.aboutOpen = false">
-        {{ t("settings.close") }}
-      </NButton>
-    </template>
-  </DialogCard>
+    </section>
+  </div>
 </template>
 
 <style scoped>
-.about-body {
+.about-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  overflow-y: auto;
+  max-width: 640px;
+}
+
+.about-card {
+  padding: 20px 22px 8px;
+}
+
+.about-head {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 0 10px;
   text-align: center;
 }
 
 .about-logo {
-  border-radius: 16px;
-  margin-bottom: 16px;
+  border-radius: 14px;
+  margin-bottom: 12px;
 }
 
 .about-name {
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 700;
   line-height: 1.3;
 }
 
 .about-version {
-  margin-top: 6px;
+  margin-top: 5px;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 2px;
@@ -150,7 +153,7 @@ function openHomepage(): void {
 }
 
 .about-desc {
-  margin: 10px 0 14px;
+  margin: 8px 0 12px;
   font-size: 13.5px;
   color: var(--text-secondary);
   line-height: 1.6;
@@ -186,8 +189,7 @@ function openHomepage(): void {
 
 /* Preference rows (theme / language) span the full card width, Fluent settings style */
 .about-prefs {
-  width: 100%;
-  margin-top: 16px;
+  margin-top: 14px;
   text-align: left;
 }
 

@@ -6,6 +6,7 @@ import { useMessage } from "naive-ui";
 import {
   share,
   loadPreview,
+  refreshDisplays,
   selectDisplay,
   startPreviewLoop,
   stopPreviewLoop,
@@ -13,7 +14,7 @@ import {
   stopShare,
 } from "@/stores/share";
 import { settings } from "@/stores/settings";
-import { openExternal } from "@/lib/tauri";
+import { isTauri, openExternal } from "@/lib/tauri";
 import AudiencePanel from "./AudiencePanel.vue";
 import Icon from "./Icon.vue";
 
@@ -69,6 +70,16 @@ function copyUrl(): void {
 function openInBrowser(): void {
   if (share.status.url) void openExternal(share.status.url);
 }
+
+async function refreshSources(): Promise<void> {
+  if (!isTauri()) {
+    message.info(t("share.browserHint"));
+    return;
+  }
+  const ok = await refreshDisplays();
+  if (ok) message.success(t("share.sourcesRefreshed"));
+  else message.error(t("share.refreshFailed"));
+}
 </script>
 
 <template>
@@ -97,6 +108,9 @@ function openInBrowser(): void {
                   :options="displayOptions"
                   @update:value="(v: number) => selectDisplay(v)"
                 />
+                <button class="icon-btn" :title="t('share.refreshSources')" @click="void refreshSources()">
+                  <Icon name="refresh" :size="14" />
+                </button>
               </div>
               <div class="field">
                 <span class="field-label">{{ t("share.resolution") }}</span>
@@ -110,6 +124,10 @@ function openInBrowser(): void {
                 <span class="badge" :class="{ live: sharing }">
                   {{ sharing ? t("share.live") : t("share.idle") }}
                 </span>
+              </div>
+              <div class="field">
+                <span class="field-label">{{ t("quality.videoQuality") }}</span>
+                <span class="value mono">{{ settings.quality }}%</span>
               </div>
             </div>
             <div class="action-col">

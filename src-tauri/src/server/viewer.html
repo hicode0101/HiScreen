@@ -159,6 +159,9 @@
     pointer-events: none;
   }
   .toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     padding: 9px 18px;
     background: var(--panel);
     border: 1px solid var(--line);
@@ -168,6 +171,11 @@
     max-width: min(480px, 86vw);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     animation: toast-in 0.25s ease;
+  }
+  .toast-icon {
+    display: inline-flex;
+    color: var(--accent);
+    flex-shrink: 0;
   }
   @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } }
 
@@ -336,7 +344,7 @@
           if (sharing && LANG === "zh") waitingText.textContent = I18N.zh.waiting;
           break;
         case "notice":
-          showToast(msg.text);
+          showToast(msg.text, msg.duration);
           break;
         case "ping":
           ws.send(JSON.stringify({ type: "pong", t: msg.t }));
@@ -487,17 +495,32 @@
   connState.textContent = I18N[LANG].reconnecting;
 
   // ---------- toasts ----------
-  function showToast(text) {
+  function showToast(text, durationSecs) {
     if (!text) return;
+    // Banner lifetime comes from the host (seconds); fall back to 8s for
+    // older hosts that do not send a duration.
+    var dur =
+      (typeof durationSecs === "number" && durationSecs >= 1
+        ? durationSecs
+        : 8) * 1000;
     var el = document.createElement("div");
     el.className = "toast";
-    el.textContent = text;
+    // Speaker glyph in front of the message; text goes through textContent
+    // so notice content stays escaped.
+    var icon = document.createElement("span");
+    icon.className = "toast-icon";
+    icon.innerHTML =
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9.5v5h3.1l4.6 3.9V5.6L7.6 9.5H4.5z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/></svg>';
+    var label = document.createElement("span");
+    label.textContent = text;
+    el.appendChild(icon);
+    el.appendChild(label);
     toasts.appendChild(el);
     setTimeout(function () {
       el.style.transition = "opacity 0.4s ease";
       el.style.opacity = "0";
       setTimeout(function () { el.remove(); }, 450);
-    }, 6000);
+    }, dur);
   }
 
   connect();

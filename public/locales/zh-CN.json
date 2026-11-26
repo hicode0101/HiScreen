@@ -7,11 +7,16 @@
     "audience": "观众管理",
     "network": "网络设置",
     "quality": "音频与质量",
-    "log": "日志"
+    "log": "日志",
+    "about": "关于"
   },
   "share": {
     "title": "开始分享",
     "source": "来源",
+    "refreshSources": "刷新来源列表",
+    "sourcesRefreshed": "来源列表已刷新",
+    "refreshFailed": "来源列表刷新失败",
+    "browserHint": "当前为浏览器调试模式，来源刷新不可用",
     "resolution": "分辨率",
     "fps": "帧率",
     "idle": "空闲",
@@ -45,6 +50,8 @@
     "kicked": "已断开该观众",
     "kickFailed": "断开失败",
     "noticePlaceholder": "发送广播通知",
+    "durSec": "{n} 秒",
+    "durMin": "{n} 分钟",
     "send": "发送",
     "noticeSent": "通知已发送",
     "noticeFailed": "通知发送失败",
@@ -67,7 +74,6 @@
     "videoQuality": "视频质量",
     "targetFps": "目标帧率",
     "shareAudio": "分享系统声音",
-    "autoStart": "自动开始分享",
     "videoSection": "视频与音频",
     "deviceSection": "设备状态",
     "audioStatus": "音频",
@@ -89,7 +95,6 @@
     "author": "作者："
   },
   "settings": {
-    "close": "关闭",
     "theme": "主题",
     "themeHint": "选择应用的显示主题，立即生效",
     "light": "浅色模式",
@@ -101,6 +106,6 @@
   "status": {
     "serverOn": "服务运行中",
     "serverOff": "服务已停止",
-    "viewers": "观众 {n}"
+    "viewers": "观众 {n} 人"
   }
 }

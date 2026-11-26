@@ -1,7 +1,7 @@
 # AGENTS.md — HiScreen 项目规范
 
 本规范约束本仓库（HiScreen，基于 tauri-bootstrap-demo 脚手架派生），AI 编码助手必须遵守。
-**基线：脚手架 v0.1.0**。基座 = Rust + Tauri 2 + Vue 3 + Vite + TS + Naive UI 的无边框 Fluent 桌面应用，开箱含标题栏 / 状态栏 / 关于弹窗 / 主题与 i18n / 设置持久化 / CI 发布；HiScreen 将脚手架的菜单栏替换为**左侧导航栏**，并加入屏幕分享业务（采集 / 推流 / 观众页）。
+**基线：脚手架 v0.1.0**。基座 = Rust + Tauri 2 + Vue 3 + Vite + TS + Naive UI 的无边框 Fluent 桌面应用，开箱含标题栏 / 状态栏 / 关于页 / 主题与 i18n / 设置持久化 / CI 发布；HiScreen 将脚手架的菜单栏替换为**左侧导航栏**，并加入屏幕分享业务（采集 / 推流 / 观众页）。
 
 ---
 
@@ -28,8 +28,8 @@
 ```
 src/
 ├─ main.ts            # 引导顺序固定：loadSettings → applyTheme → setLanguage → mount
-├─ App.vue            # NConfigProvider 接线（主题/语言）+ 骨架（TitleBar/Sidebar/五视图/StatusBar + 弹窗）+ initShare()
-├─ components/        # 全部 Vue 组件（五视图：ShareView/AudienceView/NetworkView/QualityView/LogView；AudiencePanel 在开始分享页与观众页复用）
+├─ App.vue            # NConfigProvider 接线（主题/语言）+ 骨架（TitleBar/Sidebar/六视图/StatusBar）+ initShare()
+├─ components/        # 全部 Vue 组件（六视图：ShareView/AudienceView/NetworkView/QualityView/LogView/AboutView；AudiencePanel 在开始分享页与观众页复用）
 ├─ lib/               # 纯逻辑：i18n / theme / tauri(api 封装) / icons / appInfo / dialogDrag
 ├─ stores/            # settings.ts（持久化设置）、share.ts（运行时分享状态+轮询）、ui.ts（瞬时 UI 状态）
 ├─ theme/fluent.ts    # Naive UI GlobalThemeOverrides（fluentLight / fluentDark）
@@ -70,14 +70,14 @@ src-tauri/src/        # main.rs → lib.rs(Builder+MediaState) → config.rs →
 
 - 语言包 `public/locales/<locale>.json`（按 `app/nav/share/audience/network/quality/log/about/settings/status` 分节），运行时 `fetch` 加载；偏好值 `"system" | "zh-CN" | "en-US"`，`system` 按 `navigator.language` 解析（`zh*`→zh-CN），回退 zh-CN；持久化读回的值必须过 `normalizeLangOption` / `normalizeThemeOption`
 - **组件中禁止硬编码界面文案**；语言下拉中语言名用原生写法；消息文本避免 `@` 与 `|`
-- 新增语言三步：① 新 locale JSON ② `i18n.ts` 的 `LANGUAGE_PREFERENCES` ③ `AboutDialog.vue` 的 `languageOptions`
+- 新增语言三步：① 新 locale JSON ② `i18n.ts` 的 `LANGUAGE_PREFERENCES` ③ `AboutView.vue` 的 `languageOptions`
 - 语言包不在 vite 模块图内，`vite.config.ts` 的 `localeReloadPlugin` 监听并整页刷新（勿删）
 
 ## 7. 窗口与 UI
 
 - 窗口：`decorations:false` + 不透明（`transparent:false`，无 Mica，底色走 `--bg-window` 实色）+ 居中，1080×720 / min 800×560；全局禁用 WebView2 默认右键菜单——在 `lib.rs` setup 中经 `with_webview` 调 `ICoreWebView2Settings6::SetAreDefaultContextMenusEnabled(false)`（Windows）
-- 标题栏：整栏拖拽，右侧为 ℹ 关于按钮（打开「关于」弹窗）+ 最小化/最大化/关闭 三钮，关闭钮 hover `#c42b1c` 白字；**侧边栏**（替代脚手架菜单栏）：172px 左栏，五项导航（开始分享/观众管理/网络设置/音频与质量/日志），激活项 accent 左缘 3px 指示条；状态栏：服务状态点 + 端口 + 观众数 + 版本号（浏览器环境隐藏版本）
-- 弹窗：**一律用统一基础组件 `components/DialogCard.vue` 创建**（内部封装 `NModal` + `useDraggableCard`，含 Fluent 卡片样式、标题栏、关闭钮、footer 分隔线；遮罩点击与 Esc 一律不关闭，关闭仅能通过标题栏 X 或 footer 插槽按钮）。能力经 props 控制（**挂载时读取，运行时不响应变更**）：`draggable`（标题栏拖拽移动，默认 true）、`resizable`（边缘/四角缩放，默认 true，最小尺寸 `minWidth`/`minHeight`，视口四周留 24px）；`title`/`aria-label`/`close-label` 走 props，正文默认插槽、`footer` 具名插槽。不得各自手写 NModal + 拖拽/缩放接线。「关于」弹窗（`:draggable="false" :resizable="false"`）承载版本信息与**主题/语言切换**（继承自脚手架设置弹窗，独立设置弹窗已删除）
+- 标题栏：整栏拖拽，右侧为最小化/最大化/关闭 三钮，关闭钮 hover `#c42b1c` 白字；**侧边栏**（替代脚手架菜单栏）：172px 左栏，六项导航（开始分享/观众管理/网络设置/音频与质量/日志/关于），激活项 accent 左缘 3px 指示条；状态栏：服务状态点 + 端口 + 观众数 + 版本号（浏览器环境隐藏版本）
+- 弹窗：**一律用统一基础组件 `components/DialogCard.vue` 创建**（内部封装 `NModal` + `useDraggableCard`，含 Fluent 卡片样式、标题栏、关闭钮、footer 分隔线；遮罩点击与 Esc 一律不关闭，关闭仅能通过标题栏 X 或 footer 插槽按钮）。能力经 props 控制（**挂载时读取，运行时不响应变更**）：`draggable`（标题栏拖拽移动，默认 true）、`resizable`（边缘/四角缩放，默认 true，最小尺寸 `minWidth`/`minHeight`，视口四周留 24px）；`title`/`aria-label`/`close-label` 走 props，正文默认插槽、`footer` 具名插槽。不得各自手写 NModal + 拖拽/缩放接线。原「关于」弹窗已改为侧边栏视图 `AboutView.vue`（承载版本信息与**主题/语言切换**），当前应用无弹窗，但新增弹窗时仍必须走 DialogCard
 - **toast（操作反馈）**：右下角弹出（`NMessageProvider placement="bottom-right" :duration="4000" :max="3" keep-alive-on-hover`）；样式 = Fluent 卡片（fluent.ts `Message` 覆盖，值引用 CSS 变量）+ 左缘 3px 类型色条（global.css）。**类型语义强制**：操作成功 `message.success`（绿）、提醒/提示 `message.info`（蓝 accent）、操作失败 `message.error`（红）、警告 `message.warning`（黄）
 - 图标一律 `Icon.vue` + `lib/icons.ts` 行内 SVG（24 网格 1.6 描边），不引第三方图标库；`body` 上 `user-select:none`；滚动条用 global.css 的 Fluent 细样式
 
@@ -103,7 +103,7 @@ src-tauri/src/        # main.rs → lib.rs(Builder+MediaState) → config.rs →
 1. 全局改名：package.json / Cargo.toml（package.name=`HiScreen`、lib=`HiScreen_lib`）/ tauri.conf.json（productName、identifier `com.hicode.hiscreen`、窗口 title）/ index.html / 语言包 `app.name`
 2. 端口：vite `1530`（tauri devUrl 与 build.bat 检查三处一致）；观众服务端口 7870（config 默认值）
 3. 图标：`scripts/gen-icon.mjs` 改为显示器+播放 glyph → `npm run gen:icon`
-4. 结构：MenuBar/WelcomeView 删除，新增 Sidebar + 五视图 + stores/share；Rust 端新增 hub/capture/audio/server
+4. 结构：MenuBar/WelcomeView 删除，新增 Sidebar + 六视图 + stores/share；Rust 端新增 hub/capture/audio/server
 5. CI：releaseName / 便携 zip 名 / Linux 追加 libasound2-dev + pkg-config
 
 ## 11. 其他

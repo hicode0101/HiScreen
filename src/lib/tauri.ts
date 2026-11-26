@@ -78,8 +78,8 @@ export const api = {
   shareStart: (displayId: number) =>
     invoke<void>("share_start", { displayId }),
   shareStop: () => invoke<void>("share_stop"),
-  broadcastNotice: (text: string) =>
-    invoke<void>("broadcast_notice", { text }),
+  broadcastNotice: (text: string, durationSecs: number) =>
+    invoke<void>("broadcast_notice", { text, durationSecs }),
   kickViewer: (id: number) => invoke<void>("kick_viewer", { id }),
   getLogs: () => invoke<LogEntry[]>("get_logs"),
   clearLogs: () => invoke<void>("clear_logs"),
