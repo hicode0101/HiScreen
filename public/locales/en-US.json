@@ -1,0 +1,109 @@
+{
+  "app": {
+    "name": "HiScreen"
+  },
+  "nav": {
+    "share": "Start Sharing",
+    "audience": "Viewers",
+    "network": "Network",
+    "quality": "Audio and Quality",
+    "log": "Log"
+  },
+  "share": {
+    "title": "Start Sharing",
+    "source": "Source",
+    "resolution": "Resolution",
+    "fps": "Frame rate",
+    "idle": "Idle",
+    "live": "Live",
+    "start": "Start Sharing",
+    "stop": "Stop Sharing",
+    "address": "Network address",
+    "serverOff": "Server not running",
+    "copy": "Copy address",
+    "copied": "Address copied",
+    "copyFailed": "Copy failed",
+    "open": "Open viewer page in browser",
+    "primary": "Primary",
+    "events": "Recent events",
+    "noEvents": "No events yet"
+  },
+  "audience": {
+    "title": "Viewers",
+    "pageTitle": "Viewers",
+    "device": "Device",
+    "browser": "Browser",
+    "latency": "Latency",
+    "connected": "Connected",
+    "audio": "Audio",
+    "audioOn": "On",
+    "audioOff": "Muted",
+    "empty": "No viewers connected",
+    "unknown": "Unknown",
+    "kick": "Disconnect this viewer",
+    "kicked": "Viewer disconnected",
+    "kickFailed": "Failed to disconnect",
+    "noticePlaceholder": "Send a broadcast notice",
+    "send": "Send",
+    "noticeSent": "Notice sent",
+    "noticeFailed": "Failed to send notice",
+    "browserHint": "Browser debug mode: viewer features are unavailable"
+  },
+  "network": {
+    "title": "Network Settings",
+    "service": "Service Status",
+    "running": "Server is running",
+    "stopped": "Server is stopped",
+    "portTitle": "Server Port",
+    "apply": "Save and Apply",
+    "portApplied": "Port setting applied",
+    "portFailed": "Failed to apply port (maybe in use)",
+    "portHint": "The server restarts automatically when the port changes. Viewers open http://host-ip:port. If viewers cannot connect, use the firewall button to allow the port."
+  },
+  "quality": {
+    "title": "Audio and Quality Settings",
+    "pageTitle": "Audio and Quality",
+    "videoQuality": "Video quality",
+    "targetFps": "Target FPS",
+    "firewall": "Allow Firewall",
+    "shareAudio": "Share system audio",
+    "autoStart": "Start sharing automatically",
+    "videoSection": "Video and Audio",
+    "deviceSection": "Device Status",
+    "audioStatus": "Audio",
+    "audioConnected": "Device connected",
+    "audioOff": "Off",
+    "captureStatus": "Capture",
+    "fpsLive": "Sharing, target {fps} FPS",
+    "fpsIdle": "Idle",
+    "firewallOk": "Firewall rule added",
+    "firewallFail": "Failed to add firewall rule (admin required)",
+    "browserHint": "Browser debug mode: this action is unavailable"
+  },
+  "log": {
+    "title": "Log",
+    "clear": "Clear",
+    "empty": "No log entries"
+  },
+  "about": {
+    "title": "About",
+    "desc": "LAN screen sharing: pick a display on the host and viewers watch in any web browser.",
+    "homepage": "Website: ",
+    "author": "Author: "
+  },
+  "settings": {
+    "close": "Close",
+    "theme": "Theme",
+    "themeHint": "Choose the app theme, applied immediately",
+    "light": "Light mode",
+    "dark": "Dark mode",
+    "language": "Language",
+    "languageHint": "Choose the UI language, applied immediately",
+    "followSystem": "Follow system"
+  },
+  "status": {
+    "serverOn": "Server running",
+    "serverOff": "Server stopped",
+    "viewers": "Viewers {n}"
+  }
+}

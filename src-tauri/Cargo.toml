@@ -1,0 +1,43 @@
+[package]
+name = "HiScreen"
+version = "0.1.0"
+edition = "2021"
+description = "LAN screen sharing desktop app built with Tauri 2"
+
+[lib]
+name = "HiScreen_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Screen sharing services
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+axum = { version = "0.8", features = ["ws"] }
+bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+scrap = "0.5"
+jpeg-encoder = "0.6"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+base64 = "0.22"
+
+[target."cfg(windows)".dependencies]
+# Versions must stay in sync with tauri's own WebView2 deps so the COM types unify.
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_Media_Audio", "Win32_System_Com"] }
+
+[target."cfg(unix)".dependencies]
+cpal = "0.15"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

@@ -1,0 +1,109 @@
+{
+  "app": {
+    "name": "HiScreen"
+  },
+  "nav": {
+    "share": "开始分享",
+    "audience": "观众管理",
+    "network": "网络设置",
+    "quality": "音频与质量",
+    "log": "日志"
+  },
+  "share": {
+    "title": "开始分享",
+    "source": "来源",
+    "resolution": "分辨率",
+    "fps": "帧率",
+    "idle": "空闲",
+    "live": "直播中",
+    "start": "开始分享",
+    "stop": "停止分享",
+    "address": "网络地址",
+    "serverOff": "服务未运行",
+    "copy": "复制地址",
+    "copied": "地址已复制",
+    "copyFailed": "复制失败",
+    "open": "在浏览器打开观众页",
+    "primary": "主显示器",
+    "events": "最近事件",
+    "noEvents": "暂无事件"
+  },
+  "audience": {
+    "title": "观众管理",
+    "pageTitle": "观众管理",
+    "device": "设备",
+    "browser": "浏览器",
+    "latency": "延迟",
+    "connected": "已连接",
+    "audio": "音频",
+    "audioOn": "开启",
+    "audioOff": "静音",
+    "empty": "暂无观众连接",
+    "unknown": "未知设备",
+    "kick": "断开此观众",
+    "kicked": "已断开该观众",
+    "kickFailed": "断开失败",
+    "noticePlaceholder": "发送广播通知",
+    "send": "发送",
+    "noticeSent": "通知已发送",
+    "noticeFailed": "通知发送失败",
+    "browserHint": "当前为浏览器调试模式，观众功能不可用"
+  },
+  "network": {
+    "title": "网络设置",
+    "service": "服务状态",
+    "running": "网络服务运行中",
+    "stopped": "网络服务已停止",
+    "portTitle": "服务端口",
+    "apply": "保存并应用",
+    "portApplied": "端口设置已应用",
+    "portFailed": "端口应用失败（可能被占用）",
+    "portHint": "修改端口后服务将自动重启；观众页访问地址为 http://主机IP:端口。若观众无法连接，请点击防火墙按钮放行端口。"
+  },
+  "quality": {
+    "title": "音频与质量设置",
+    "pageTitle": "音频与质量",
+    "videoQuality": "视频质量",
+    "targetFps": "目标帧率",
+    "firewall": "允许防火墙",
+    "shareAudio": "分享系统声音",
+    "autoStart": "自动开始分享",
+    "videoSection": "视频与音频",
+    "deviceSection": "设备状态",
+    "audioStatus": "音频",
+    "audioConnected": "设备已连接",
+    "audioOff": "已关闭",
+    "captureStatus": "捕获",
+    "fpsLive": "分享中，目标 {fps} FPS",
+    "fpsIdle": "空闲",
+    "firewallOk": "防火墙规则已添加",
+    "firewallFail": "防火墙规则添加失败（需要管理员权限）",
+    "browserHint": "当前为浏览器调试模式，此操作不可用"
+  },
+  "log": {
+    "title": "日志",
+    "clear": "清空",
+    "empty": "暂无日志"
+  },
+  "about": {
+    "title": "关于",
+    "desc": "局域网屏幕分享工具：主机选择屏幕开始分享，观众通过浏览器即可观看。",
+    "homepage": "官网：",
+    "author": "作者："
+  },
+  "settings": {
+    "close": "关闭",
+    "theme": "主题",
+    "themeHint": "选择应用的显示主题，立即生效",
+    "light": "浅色模式",
+    "dark": "深色模式",
+    "language": "语言",
+    "languageHint": "选择界面显示语言，立即生效",
+    "followSystem": "跟随系统"
+  },
+  "status": {
+    "serverOn": "服务运行中",
+    "serverOff": "服务已停止",
+    "viewers": "观众 {n}"
+  }
+}
