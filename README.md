@@ -35,8 +35,6 @@
 
 HiScreen 是一款局域网屏幕分享软件：主机运行本程序，选择要分享的显示器并点击「开始分享」，同一局域网内的任何设备（手机 / 平板 / 电脑）用浏览器访问 `http://主机IP:7870` 即可实时观看画面与收听系统声音，无需安装任何客户端。
 
-> AI 编码助手的项目规范约束见 [AGENTS.md](AGENTS.md)（继承自 tauri-bootstrap-demo 脚手架）。
-
 ## ✨ 功能特性
 
 **屏幕分享**
@@ -201,5 +199,4 @@ HiScreen/
 
 ## 📄 相关文档
 
-- [AGENTS.md](AGENTS.md) — 面向 AI 编码助手的完整项目规范
 - [build.bat](build.bat) — Windows 本地构建脚本用法
