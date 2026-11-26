@@ -84,7 +84,9 @@ jobs:
           # 依赖对齐 Tauri v2 官方文档（Ubuntu 22.04）。注意：libappindicator3-dev 与
           # libayatana-appindicator3-dev 互相 Conflicts 且前者已停止维护，同时安装会导致
           # apt 报 held broken packages（exit 100），只能保留 ayatana 版
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev pkg-config libayatana-appindicator3-dev librsvg2-dev patchelf
+          # 末尾三个 xcb 开发库是 scrap 的 X11 采集层直接 #[link] 的
+          # （xcb / xcb-shm / xcb-randr），runner 预装不全，缺 -lxcb-randr 会链接失败
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev pkg-config libayatana-appindicator3-dev librsvg2-dev patchelf libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev
 
       - name: Install frontend dependencies
         run: npm ci
