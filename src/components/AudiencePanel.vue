@@ -19,6 +19,49 @@ const notice = ref("");
 const noticeDuration = ref(10);
 const viewers = computed(() => share.status.viewers ?? []);
 
+/** Sort state for the IP column: clicking the header cycles
+    未排序 → 升序 → 降序 → 未排序（与 Naive UI 表格的三态一致）. */
+const ipSort = ref<"none" | "asc" | "desc">("none");
+
+function toggleIpSort(): void {
+  ipSort.value =
+    ipSort.value === "none"
+      ? "asc"
+      : ipSort.value === "asc"
+        ? "desc"
+        : "none";
+}
+
+/** Numeric compare for dotted IPv4 (9.x sorts before 10.x); anything else
+    (IPv6, empty) falls back to plain string order. */
+function cmpIp(a: string, b: string): number {
+  const pa = a.split(".");
+  const pb = b.split(".");
+  if (
+    pa.length === 4 &&
+    pb.length === 4 &&
+    pa.concat(pb).every((p) => /^\d{1,3}$/.test(p))
+  ) {
+    for (let i = 0; i < 4; i++) {
+      const d = Number(pa[i]) - Number(pb[i]);
+      if (d !== 0) return d;
+    }
+    return 0;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Rows in display order: sorted by IP while a direction is active. The
+    source array stays join-ordered, and equal IPs keep their join order
+    (sort is stable), so toggling never shuffles same-address rows. */
+const shownViewers = computed(() => {
+  if (ipSort.value === "none") return viewers.value;
+  const sign = ipSort.value === "asc" ? 1 : -1;
+  return [...viewers.value].sort(
+    (x, y) => sign * cmpIp(x.addr || "", y.addr || ""),
+  );
+});
+
 const durationOptions = [
   { label: () => t("audience.durSec", { n: 5 }), value: 5 },
   { label: () => t("audience.durSec", { n: 10 }), value: 10 },
@@ -75,7 +118,16 @@ async function kick(id: number): Promise<void> {
       <table class="aud-table">
         <thead>
           <tr>
-            <th>{{ t("audience.ip") }}</th>
+            <th
+              class="ip-col sortable"
+              :title="t('audience.ipSortTip')"
+              @click="toggleIpSort"
+            >
+              {{ t("audience.ip") }}
+              <span v-if="ipSort !== 'none'" class="sort-mark">
+                {{ ipSort === "asc" ? "▲" : "▼" }}
+              </span>
+            </th>
             <th>{{ t("audience.device") }}</th>
             <th v-if="!props.compact">{{ t("audience.browser") }}</th>
             <th>{{ t("audience.latency") }}</th>
@@ -90,7 +142,7 @@ async function kick(id: number): Promise<void> {
               {{ t("audience.empty") }}
             </td>
           </tr>
-          <tr v-for="v in viewers" :key="v.id">
+          <tr v-for="v in shownViewers" :key="v.id">
             <td class="mono">{{ v.addr || "—" }}</td>
             <td>
               <div class="device-cell">
@@ -205,6 +257,21 @@ async function kick(id: number): Promise<void> {
   background: var(--bg-subtle);
   border-bottom: 1px solid var(--stroke);
   white-space: nowrap;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable:hover {
+  color: var(--text-primary);
+}
+
+.sort-mark {
+  margin-left: 4px;
+  font-size: 9px;
+  color: var(--accent);
 }
 
 .aud-table td {

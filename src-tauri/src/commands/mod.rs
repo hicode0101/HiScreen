@@ -1,6 +1,7 @@
 //! Tauri IPC commands. Components never `invoke()` directly — the frontend
 //! wraps these in `src/lib/tauri.ts`.
 
+use std::net::IpAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ use tauri::{AppHandle, State};
 use crate::audio;
 use crate::capture;
 use crate::config::{AppConfig, AppState};
-use crate::hub::{now_ms, DisplayMeta, LogEntry, LogLevel, ViewerEntry};
+use crate::hub::{now_ms, DisplayMeta, KICK_BAN_DURATION, LogEntry, LogLevel, ViewerEntry};
 use crate::mic;
 use crate::server;
 use crate::MediaState;
@@ -48,15 +49,25 @@ pub fn list_displays() -> Result<Vec<DisplayMeta>, String> {
 /// One downscaled JPEG frame (base64 data URL) for display thumbnails.
 #[tauri::command]
 pub fn capture_preview(state: State<MediaState>, display_id: usize) -> Result<String, String> {
-    // While a capture session runs it owns the display duplication; a
-    // concurrent preview grab would fail with a driver conflict. The
-    // frontend pauses its preview loop while sharing — this is the
-    // backend-side guard against races around the share start/stop.
-    if state.capture.lock().unwrap().is_some() {
-        return Err("capture session in progress".into());
+    // While a capture session runs on this display it owns the duplication:
+    // the preview is served from the session's own published thumbnails
+    // instead of a second duplication (which would conflict with the live
+    // capture). Previews for other displays still use the grabber —
+    // duplications on distinct outputs coexist.
+    if let Some(handle) = state.capture.lock().unwrap().as_ref() {
+        if handle.display.id == display_id {
+            let slot = handle.preview.lock().unwrap();
+            return match slot.as_ref() {
+                Some(jpeg) => Ok(format!(
+                    "data:image/jpeg;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(jpeg)
+                )),
+                None => Err("capture session warming up".into()),
+            };
+        }
     }
     let mut slot = state.preview.lock().unwrap();
-    match capture::preview_frame(&mut slot, display_id, 480) {
+    match capture::preview_frame(&mut slot, display_id, capture::PREVIEW_MAX_WIDTH) {
         Ok(jpeg) => Ok(format!(
             "data:image/jpeg;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(jpeg)
@@ -389,13 +400,29 @@ pub fn broadcast_notice(state: State<MediaState>, text: String, duration_secs: u
 
 #[tauri::command]
 pub fn kick_viewer(state: State<MediaState>, id: usize) -> Result<(), String> {
-    let viewers = state.hub.viewers.lock().unwrap();
-    if let Some(entry) = viewers.iter().find(|v| v.id == id) {
-        let _ = entry.kick.send(());
-        Ok(())
-    } else {
-        Err("viewer not found".into())
+    let kicked_ip: Option<IpAddr> = {
+        let viewers = state.hub.viewers.lock().unwrap();
+        match viewers.iter().find(|v| v.id == id) {
+            Some(entry) => {
+                let _ = entry.kick.send(());
+                entry.addr.parse().ok()
+            }
+            None => return Err("viewer not found".into()),
+        }
+    };
+    if let Some(ip) = kicked_ip {
+        // A kicked IP is locked out of reconnecting for a while, so the
+        // viewer cannot simply ride the page's auto-reconnect back in.
+        state.hub.kick_bans.lock().unwrap().ban(ip, KICK_BAN_DURATION);
+        state.hub.log(
+            LogLevel::Warn,
+            format!(
+                "观众已断开，IP {ip} 在 {} 分钟内无法重连",
+                KICK_BAN_DURATION.as_secs() / 60
+            ),
+        );
     }
+    Ok(())
 }
 
 // ----------------------------------------------------------------- logs

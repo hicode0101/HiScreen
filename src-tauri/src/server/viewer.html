@@ -361,6 +361,8 @@
       pwConnect: "连接",
       pwWrong: "密码错误，还可尝试 {n} 次",
       pwBanned: "错误次数过多，IP 已被锁定，请 {n} 分钟后再试",
+      kickBanned: "您已被主持人断开连接，请 {n} 分钟后重新连接",
+      kickTitle: "暂时无法连接",
     },
     en: {
       waiting: "Waiting for the host to start sharing…",
@@ -381,6 +383,8 @@
       pwConnect: "Connect",
       pwWrong: "Wrong password, {n} attempt(s) left",
       pwBanned: "Too many failed attempts — this IP is locked, retry in {n} min",
+      kickBanned: "Disconnected by the host — you can reconnect in {n} min",
+      kickTitle: "Temporarily blocked",
     },
   };
 
@@ -458,11 +462,19 @@
   authInput.placeholder = I18N[LANG].pwPlaceholder;
   authBtn.textContent = I18N[LANG].pwConnect;
 
-  function showAuth() {
+  // pwMode=true renders the password card; false renders a bare lockout
+  // notice — a kicked viewer has no password to enter when the gate was
+  // never on, so the input and button stay hidden.
+  function showAuth(pwMode) {
     authMask.hidden = false;
     authErr.textContent = "";
-    authInput.value = "";
-    setTimeout(function () { authInput.focus(); }, 50);
+    authTitle.textContent = pwMode ? I18N[LANG].pwTitle : I18N[LANG].kickTitle;
+    authInput.style.display = pwMode ? "" : "none";
+    authBtn.style.display = pwMode ? "" : "none";
+    if (pwMode) {
+      authInput.value = "";
+      setTimeout(function () { authInput.focus(); }, 50);
+    }
   }
   function submitAuth() {
     var pw = authInput.value.trim();
@@ -501,6 +513,10 @@
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       switch (msg.type) {
         case "meta":
+          // Registered (no password gate, or it just passed): any lockout
+          // card left over from an earlier kick goes away.
+          authMask.hidden = true;
+          bannedUntil = 0;
           sharing = !!msg.sharing;
           metaFps = msg.fps || 0;
           metaAudio = !!msg.audio;
@@ -520,7 +536,7 @@
         case "need_auth":
           // Server asks for the password before streaming anything.
           if (pendingPw) ws.send(JSON.stringify({ type: "auth", pw: pendingPw }));
-          else showAuth();
+          else showAuth(true);
           break;
         case "auth_ok":
           authMask.hidden = true;
@@ -531,16 +547,18 @@
           break;
         case "auth_fail":
           pendingPw = "";
-          showAuth();
+          showAuth(true);
           authErr.textContent = I18N[LANG].pwWrong.replace("{n}", msg.left);
           break;
         case "auth_banned":
-          // This IP exhausted its attempts: the host rejects everything
-          // without checking the password until the lockout lapses.
+          // The host rejects everything from this IP until the lockout
+          // lapses: password attempts exhausted, or kicked by the host.
+          // A kick shows the message only — no password card.
           pendingPw = "";
-          showAuth();
+          showAuth(msg.reason !== "kick");
           var secs = typeof msg.secs === "number" && msg.secs >= 1 ? msg.secs : 300;
-          authErr.textContent = I18N[LANG].pwBanned.replace(
+          var text = msg.reason === "kick" ? I18N[LANG].kickBanned : I18N[LANG].pwBanned;
+          authErr.textContent = text.replace(
             "{n}",
             Math.max(1, Math.ceil(secs / 60)),
           );

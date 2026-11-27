@@ -1,4 +1,5 @@
 import { reactive } from "vue";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   api,
   isTauri,
@@ -37,7 +38,80 @@ let statusTimer: number | null = null;
 let previewTimer: number | null = null;
 let previewBusy = false;
 
+/** Whether the app window is usable: focused AND not minimized. Preview sync
+ * pauses while either fails (window minimized or pushed to the background)
+ * and resumes when the user brings it back — an unused window has no reason
+ * to keep grabbing frames. Both start "usable": the window is focused after
+ * launch. */
+let winFocused = true;
+let winMinimized = false;
+let windowActive = true;
+let unlistenFocus: (() => void) | null = null;
+let unlistenResize: (() => void) | null = null;
+let unlistenMove: (() => void) | null = null;
+
+function updateActive(): void {
+  windowActive = winFocused && !winMinimized;
+}
+
+/** Follow the window's activation and size (Tauri window events; focus/blur
+ * + visibility in the browser debug mode). */
+function trackWindowFocus(): void {
+  if (isTauri()) {
+    const w = getCurrentWindow();
+    void w
+      .onFocusChanged(({ payload }) => {
+        winFocused = payload;
+        updateActive();
+      })
+      .then((fn) => {
+        unlistenFocus = fn;
+      });
+    void w
+      .onResized(({ payload }) => {
+        // Some Windows builds report a 0×0 size while minimized. This only
+        // ever SETS the flag — the moved handler below owns clearing it, so
+        // the tiny non-zero minimized size (181×25) cannot overwrite it.
+        if (payload.width === 0 || payload.height === 0) {
+          winMinimized = true;
+          updateActive();
+        }
+      })
+      .then((fn) => {
+        unlistenResize = fn;
+      });
+    void w
+      .onMoved(({ payload }) => {
+        // Windows parks minimized windows at −32000,−32000 (the size only
+        // shrinks to a tiny strip) — the reliable minimize signal, because
+        // an external minimize may leave the window active (no blur event
+        // follows) and the size is not 0×0 either. A real position clears
+        // the flag again.
+        winMinimized = payload.x <= -32000 || payload.y <= -32000;
+        updateActive();
+      })
+      .then((fn) => {
+        unlistenMove = fn;
+      });
+    return;
+  }
+  // Browser debug mode: approximate the same behavior on page events.
+  window.addEventListener("focus", () => {
+    winFocused = true;
+    updateActive();
+  });
+  window.addEventListener("blur", () => {
+    winFocused = false;
+    updateActive();
+  });
+  document.addEventListener("visibilitychange", () => {
+    winMinimized = document.hidden;
+    updateActive();
+  });
+}
+
 export async function initShare(): Promise<void> {
+  trackWindowFocus();
   await refreshDisplays();
   if (!statusTimer) {
     void refreshStatus();
@@ -61,6 +135,18 @@ export function disposeShare(): void {
     statusTimer = null;
   }
   stopPreviewLoop();
+  if (unlistenFocus) {
+    unlistenFocus();
+    unlistenFocus = null;
+  }
+  if (unlistenResize) {
+    unlistenResize();
+    unlistenResize = null;
+  }
+  if (unlistenMove) {
+    unlistenMove();
+    unlistenMove = null;
+  }
 }
 
 /**
@@ -91,14 +177,16 @@ export async function refreshDisplays(): Promise<boolean> {
 /**
  * Thumbnail for the given display. Without `force` this only fetches when no
  * thumbnail exists yet (first paint); the live preview loop passes `force`
- * so the frame keeps refreshing at ~1 FPS. Transient failures keep the
- * previous thumbnail on screen.
+ * so the frame keeps refreshing every PREVIEW_INTERVAL_MS. Transient
+ * failures keep the previous thumbnail on screen.
  *
- * Skipped entirely while sharing: the capture session owns the display's
- * DXGI duplication, and a concurrent preview grab would clash with it.
+ * Sync runs only while the app window is focused: a minimized or background
+ * window stops grabbing frames and resumes on refocus. While sharing, the
+ * capture session publishes the thumbnails itself (its duplication owns the
+ * display), so preview updates no longer depend on the share start/stop.
  */
 export async function loadPreview(id: number, force = false): Promise<void> {
-  if (!isTauri() || previewBusy || share.status.sharing) return;
+  if (!isTauri() || previewBusy || !windowActive) return;
   if (!force && share.previews[id]) return;
   previewBusy = true;
   try {

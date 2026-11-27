@@ -3,7 +3,7 @@
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -13,9 +13,22 @@ use scrap::{Capturer, Display};
 use crate::cursor;
 use crate::hub::{DisplayMeta, Hub, LogLevel, FRAME_VIDEO};
 
+/// Width cap for the host-side preview thumbnails; the persistent grabber
+/// and the session preview publisher must agree.
+pub const PREVIEW_MAX_WIDTH: u32 = 480;
+/// The session publishes preview thumbnails at this cadence; mirrors the
+/// frontend preview loop (share.ts PREVIEW_INTERVAL_MS).
+const PREVIEW_PUBLISH_INTERVAL: Duration = Duration::from_secs(2);
+
 /// One running capture session for a display; dropping it stops the thread.
 pub struct CaptureHandle {
     pub display: DisplayMeta,
+    /// Newest downscaled preview thumbnail published by the session thread.
+    /// While the session owns the display's duplication it also feeds the
+    /// host preview — a second duplication (the persistent grabber) would
+    /// conflict with the live capture, so same-display previews come from
+    /// here instead.
+    pub preview: Arc<Mutex<Option<Vec<u8>>>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -70,12 +83,15 @@ pub fn start(hub: Arc<Hub>, display_id: usize) -> io::Result<CaptureHandle> {
 
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();
+    let preview = Arc::new(Mutex::new(None));
+    let preview2 = preview.clone();
     let hub2 = hub.clone();
     let thread = thread::Builder::new()
         .name("hiscreen-capture".into())
-        .spawn(move || run_capture(hub2, display_id, stop2))?;
+        .spawn(move || run_capture(hub2, display_id, stop2, preview2))?;
     Ok(CaptureHandle {
         display: meta,
+        preview,
         stop,
         thread: Some(thread),
     })
@@ -83,10 +99,15 @@ pub fn start(hub: Arc<Hub>, display_id: usize) -> io::Result<CaptureHandle> {
 
 /// Capture loop with automatic retry: a session error (display mode change,
 /// device loss) is logged and the capture restarts until the stop flag sets.
-fn run_capture(hub: Arc<Hub>, display_id: usize, stop: Arc<AtomicBool>) {
+fn run_capture(
+    hub: Arc<Hub>,
+    display_id: usize,
+    stop: Arc<AtomicBool>,
+    preview: Arc<Mutex<Option<Vec<u8>>>>,
+) {
     let mut backoff = 500u64;
     while !stop.load(Ordering::Relaxed) {
-        match capture_session(&hub, display_id, &stop) {
+        match capture_session(&hub, display_id, &stop, &preview) {
             Ok(()) => return, // stopped by flag
             Err(e) => {
                 hub.log(
@@ -100,7 +121,12 @@ fn run_capture(hub: Arc<Hub>, display_id: usize, stop: Arc<AtomicBool>) {
     }
 }
 
-fn capture_session(hub: &Hub, display_id: usize, stop: &AtomicBool) -> io::Result<()> {
+fn capture_session(
+    hub: &Hub,
+    display_id: usize,
+    stop: &AtomicBool,
+    preview: &Arc<Mutex<Option<Vec<u8>>>>,
+) -> io::Result<()> {
     let display = find_display(display_id)?;
     let (w, h) = (display.width(), display.height());
     // The cursor overlay needs the captured monitor's virtual-screen origin
@@ -109,6 +135,9 @@ fn capture_session(hub: &Hub, display_id: usize, stop: &AtomicBool) -> io::Resul
     let mut capturer = Capturer::new(display)?;
 
     let mut next_tick = Instant::now();
+    // Publish the first frame right away so the host preview does not sit
+    // on the pre-share thumbnail for one interval.
+    let mut last_publish = Instant::now() - PREVIEW_PUBLISH_INTERVAL;
     loop {
         if stop.load(Ordering::Relaxed) {
             return Ok(());
@@ -124,15 +153,20 @@ fn capture_session(hub: &Hub, display_id: usize, stop: &AtomicBool) -> io::Resul
                     // resolution change; skip this frame.
                     continue;
                 }
-                if hub.cursor_on.load(Ordering::Relaxed) && origin.is_some() {
-                    // The duplication image has no pointer in it; composite
-                    // the live cursor before encoding (one buffer copy).
-                    let mut with_cursor = frame.to_vec();
-                    cursor::draw_cursor(&mut with_cursor, w as i32, h as i32, origin.unwrap());
-                    encode_and_broadcast(hub, &with_cursor, w, h);
-                } else {
-                    encode_and_broadcast(hub, &frame, w, h);
-                }
+                let mut owned: Vec<u8>;
+                let frame_data: &[u8] =
+                    if hub.cursor_on.load(Ordering::Relaxed) && origin.is_some() {
+                        // The duplication image has no pointer in it;
+                        // composite the live cursor before encoding (one
+                        // buffer copy).
+                        owned = frame.to_vec();
+                        cursor::draw_cursor(&mut owned, w as i32, h as i32, origin.unwrap());
+                        &owned
+                    } else {
+                        &frame[..]
+                    };
+                encode_and_broadcast(hub, frame_data, w, h);
+                maybe_publish_preview(preview, frame_data, w, h, &mut last_publish);
             }
             Err(ref e)
                 if e.kind() == io::ErrorKind::WouldBlock
@@ -163,6 +197,30 @@ fn encode_and_broadcast(hub: &Hub, frame: &[u8], w: usize, h: usize) {
     // send() fails only when no viewer is connected — that is fine, the host
     // still keeps capturing so previews and late joiners work.
     let _ = hub.video.send(Arc::from(msg));
+}
+
+/// Publish a downscaled preview thumbnail from the live capture session (at
+/// most every PREVIEW_PUBLISH_INTERVAL) so the host preview keeps refreshing
+/// while sharing without needing a second duplication. Black pre-composition
+/// buffers are skipped so the preview never freezes on a black frame right
+/// after the duplication starts.
+fn maybe_publish_preview(
+    slot: &Arc<Mutex<Option<Vec<u8>>>>,
+    frame: &[u8],
+    w: usize,
+    h: usize,
+    last_publish: &mut Instant,
+) {
+    if last_publish.elapsed() < PREVIEW_PUBLISH_INTERVAL {
+        return;
+    }
+    if frame_mean_rgb(frame) <= 2.0 {
+        return;
+    }
+    if let Ok(jpeg) = encode_thumbnail(frame, w, h, PREVIEW_MAX_WIDTH) {
+        *slot.lock().unwrap() = Some(jpeg);
+        *last_publish = Instant::now();
+    }
 }
 
 /// Mean of sampled B+G+R bytes (the alpha byte at i%4==3 is skipped) —

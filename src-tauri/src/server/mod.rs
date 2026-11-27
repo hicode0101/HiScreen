@@ -146,6 +146,24 @@ async fn ws_route(
 async fn viewer_socket(socket: WebSocket, hub: Arc<Hub>, ip: IpAddr) {
     let (mut sink, mut stream) = socket.split();
 
+    // An IP the host kicked is rejected outright for a while: the remaining
+    // lockout is the only state consulted (the password gate never runs),
+    // and the reply goes out before anything else happens.
+    // (Bind first — a lock() temporary would otherwise be held across the
+    // await below, making the future !Send.)
+    let kick_secs = hub.kick_bans.lock().unwrap().ban_left_secs(&ip);
+    if let Some(secs) = kick_secs {
+        hub.log(
+            LogLevel::Warn,
+            format!("已被断开的观众尝试重连，拒绝: {ip}（剩 {secs} 秒）"),
+        );
+        let msg = json!({ "type": "auth_banned", "secs": secs, "reason": "kick" }).to_string();
+        if sink.send(Message::text(msg)).await.is_ok() {
+            close_gracefully(&mut sink, &mut stream).await;
+        }
+        return;
+    }
+
     // Connection-password gate: viewers register (and appear in the host UI)
     // only after presenting the password, so unauthenticated sockets never
     // receive frames or count towards the audience list.

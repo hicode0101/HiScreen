@@ -22,6 +22,8 @@ pub const FRAME_AUDIO: u8 = 2;
 pub const PW_MAX_FAILS: u32 = 5;
 /// How long an IP stays locked out after exhausting its attempts.
 pub const PW_BAN_DURATION: Duration = Duration::from_secs(300);
+/// How long an IP the host kicked stays blocked from reconnecting.
+pub const KICK_BAN_DURATION: Duration = Duration::from_secs(600);
 
 /// Outcome of recording one wrong password attempt.
 pub enum PwFail {
@@ -31,20 +33,26 @@ pub enum PwFail {
     Banned(u64),
 }
 
-/// Per-IP failure accounting for the connection password. Lives on the hub
-/// so counts survive reconnects from the same address; a success wipes the
-/// record, exhausting the limit starts a timed ban.
-pub struct PwGuard {
-    fails: HashMap<IpAddr, u32>,
+/// IP → ban-expiry map with lazy expiry lookup. The shared machinery behind
+/// the password lockout (`PwGuard`) and the host-initiated kick ban.
+#[derive(Default)]
+pub struct BanList {
     bans: HashMap<IpAddr, Instant>,
 }
 
-impl PwGuard {
+impl BanList {
     pub fn new() -> Self {
-        Self {
-            fails: HashMap::new(),
-            bans: HashMap::new(),
-        }
+        Self::default()
+    }
+
+    /// Ban `ip` until an absolute instant (also how tests backdate entries).
+    pub fn ban_until(&mut self, ip: IpAddr, until: Instant) {
+        self.bans.insert(ip, until);
+    }
+
+    /// Ban `ip` for `dur` starting now.
+    pub fn ban(&mut self, ip: IpAddr, dur: Duration) {
+        self.ban_until(ip, Instant::now() + dur);
     }
 
     /// Seconds left on `ip`'s ban; expired entries are dropped lazily here.
@@ -58,6 +66,32 @@ impl PwGuard {
         Some(left.as_secs() + u64::from(left.subsec_millis() > 0))
     }
 
+    pub fn clear(&mut self) {
+        self.bans.clear();
+    }
+}
+
+/// Per-IP failure accounting for the connection password. Lives on the hub
+/// so counts survive reconnects from the same address; a success wipes the
+/// record, exhausting the limit starts a timed ban.
+pub struct PwGuard {
+    fails: HashMap<IpAddr, u32>,
+    bans: BanList,
+}
+
+impl PwGuard {
+    pub fn new() -> Self {
+        Self {
+            fails: HashMap::new(),
+            bans: BanList::new(),
+        }
+    }
+
+    /// Seconds left on `ip`'s ban; expired entries are dropped lazily here.
+    pub fn ban_left_secs(&mut self, ip: &IpAddr) -> Option<u64> {
+        self.bans.ban_left_secs(ip)
+    }
+
     /// Record one wrong attempt. Returns `Banned` when this attempt tipped
     /// the IP over the limit (the ban starts now and the count resets, so a
     /// fresh round begins once the ban lapses).
@@ -66,7 +100,7 @@ impl PwGuard {
         *fails += 1;
         if *fails >= PW_MAX_FAILS {
             self.fails.remove(ip);
-            self.bans.insert(*ip, Instant::now() + PW_BAN_DURATION);
+            self.bans.ban(*ip, PW_BAN_DURATION);
             PwFail::Banned(PW_BAN_DURATION.as_secs())
         } else {
             PwFail::Counted(*fails)
@@ -175,6 +209,10 @@ pub struct Hub {
     pub password: Mutex<String>,
     /// Per-IP wrong-attempt counts and timed bans for the password gate.
     pub pw_guard: Mutex<PwGuard>,
+    /// IPs the host disconnected from the audience view: their reconnect
+    /// requests are rejected outright for KICK_BAN_DURATION, independent of
+    /// the password gate. Session-only (never restored from the config).
+    pub kick_bans: Mutex<BanList>,
     pub fps: AtomicU32,
     pub quality: AtomicU32,
 }
@@ -211,6 +249,7 @@ impl Hub {
             pw_on: AtomicBool::new(false),
             password: Mutex::new(String::new()),
             pw_guard: Mutex::new(PwGuard::new()),
+            kick_bans: Mutex::new(BanList::new()),
             fps: AtomicU32::new(fps),
             quality: AtomicU32::new(quality),
         }
@@ -326,7 +365,7 @@ mod pw_guard_tests {
         }
         assert!(g.ban_left_secs(&a).is_some());
         // Pretend time has passed: replace the expiry with a stale instant.
-        g.bans.insert(a, Instant::now() - PW_BAN_DURATION);
+        g.bans.ban_until(a, Instant::now() - PW_BAN_DURATION);
         assert_eq!(g.ban_left_secs(&a), None);
     }
 
@@ -353,5 +392,48 @@ mod pw_guard_tests {
         g.clear_all();
         assert_eq!(g.ban_left_secs(&a), None);
         assert!(matches!(g.add_fail(&a), PwFail::Counted(1)));
+    }
+}
+
+#[cfg(test)]
+mod kick_ban_tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    fn ip(n: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(192, 168, 1, n))
+    }
+
+    #[test]
+    fn kicked_ip_is_blocked_for_ten_minutes() {
+        let mut b = BanList::new();
+        let a = ip(1);
+        assert_eq!(b.ban_left_secs(&a), None);
+        b.ban(a, KICK_BAN_DURATION);
+        let secs = b.ban_left_secs(&a).expect("kicked IP must be blocked");
+        assert!((599..=600).contains(&secs));
+    }
+
+    #[test]
+    fn kick_ban_expiry_lifts_the_block() {
+        let mut b = BanList::new();
+        let a = ip(2);
+        b.ban(a, KICK_BAN_DURATION);
+        assert!(b.ban_left_secs(&a).is_some());
+        // Pretend the ten minutes have passed.
+        b.ban_until(a, Instant::now() - KICK_BAN_DURATION);
+        assert_eq!(b.ban_left_secs(&a), None);
+    }
+
+    #[test]
+    fn re_kick_refreshes_the_window() {
+        let mut b = BanList::new();
+        let a = ip(3);
+        b.ban(a, KICK_BAN_DURATION);
+        // Nearly lapsed, then the host kicks again once the IP sneaks back in.
+        b.ban_until(a, Instant::now() - Duration::from_secs(1));
+        b.ban(a, KICK_BAN_DURATION);
+        let secs = b.ban_left_secs(&a).expect("re-kick must refresh the ban");
+        assert!((599..=600).contains(&secs));
     }
 }
